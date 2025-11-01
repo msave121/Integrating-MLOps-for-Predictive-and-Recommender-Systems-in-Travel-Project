@@ -15,10 +15,10 @@ pipeline {
 
         stage('Install Dependencies') {
             steps {
-                sh '''
+                bat '''
                 python -m venv .venv
-                source .venv/bin/activate
-                pip install --upgrade pip
+                call .venv\\Scripts\\activate
+                python -m pip install --upgrade pip
                 pip install -r requirements.txt
                 '''
             }
@@ -26,8 +26,8 @@ pipeline {
 
         stage('Run Tests') {
             steps {
-                sh '''
-                source .venv/bin/activate
+                bat '''
+                call .venv\\Scripts\\activate
                 pytest
                 '''
             }
@@ -35,25 +35,25 @@ pipeline {
 
         stage('Train & Save Model') {
             steps {
-                sh '''
-                source .venv/bin/activate
-                python src/train_regression.py
+                bat '''
+                call .venv\\Scripts\\activate
+                python src\\train_regression.py
                 '''
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh "docker build -t $DOCKER_IMAGE ."
+                bat "docker build -t %DOCKER_IMAGE% ."
             }
         }
 
         stage('Push Docker Image') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'dockerhub-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh '''
-                    echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-                    docker push $DOCKER_IMAGE:latest
+                    bat '''
+                    echo %DOCKER_PASS% | docker login -u %DOCKER_USER% --password-stdin
+                    docker push %DOCKER_IMAGE%:latest
                     '''
                 }
             }
@@ -62,10 +62,10 @@ pipeline {
 
     post {
         success {
-            echo 'CI/CD Pipeline completed successfully'
+            echo '✅ CI/CD Pipeline completed successfully!'
         }
         failure {
-            echo 'CI/CD Pipeline failed'
+            echo '❌ CI/CD Pipeline failed.'
         }
     }
 }
