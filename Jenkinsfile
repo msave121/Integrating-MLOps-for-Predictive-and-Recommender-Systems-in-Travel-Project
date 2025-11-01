@@ -1,68 +1,72 @@
 pipeline {
-  agent any
+    agent any
 
-  options { timestamps() }
-
-  environment {
-    // Prefer a system-wide Python install path that actually exists for the Jenkins service user
-    PY_HOME = 'C:\\Python313'  // <- change to your real path (folder containing python.exe)
-    PATH = "${PY_HOME};${PATH}"
-  }
-
-  stages {
-    stage('Checkout') {
-      steps {
-        // Pin the branch to main to avoid the "couldn't find any revision" error
-        git branch: 'main',
-            url: 'https://github.com/msave121/msave121.git'
-      }
+    environment {
+        PYTHON = "C:\\Users\\HP\\AppData\\Local\\Programs\\Python\\Python312\\python.exe"
+        DOCKER_IMAGE = "msave12345/voyage-analytics-app"
+        MODEL_PATH = "model/voyage_model/1/model.pkl"
     }
 
-    stage('Install Dependencies') {
-      steps {
-        bat '''
-          python --version
-          python -m venv .venv
-          call .venv\\Scripts\\activate && python -m pip install --upgrade pip
-          call .venv\\Scripts\\activate && pip install -r requirements.txt
-        '''
-      }
+    stages {
+        stage('Checkout') {
+            steps {
+                git url: 'https://github.com/msave121/msave121.git', branch: 'main'
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                bat """
+                "%PYTHON%" -m venv .venv
+                call .venv\\Scripts\\activate
+                "%PYTHON%" -m pip install --upgrade pip
+                "%PYTHON%" -m pip install -r requirements.txt
+                """
+            }
+        }
+
+        stage('Run Tests') {
+            steps {
+                bat """
+                call .venv\\Scripts\\activate
+                pytest
+                """
+            }
+        }
+
+        stage('Train & Save Model') {
+            steps {
+                bat """
+                call .venv\\Scripts\\activate
+                "%PYTHON%" src\\train_regression.py
+                """
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                bat "docker build -t %DOCKER_IMAGE% ."
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    bat """
+                    echo %DOCKER_PASS% | docker login -u %DOCKER_USER% --password-stdin
+                    docker push %DOCKER_IMAGE%:latest
+                    """
+                }
+            }
+        }
     }
 
-    stage('Run Tests') {
-      steps {
-        bat 'call .venv\\Scripts\\activate && pytest -q tests'
-      }
+    post {
+        success {
+            echo '✅ CI/CD Pipeline completed successfully!'
+        }
+        failure {
+            echo '❌ CI/CD Pipeline failed.'
+        }
     }
-
-    stage('Train & Save Model') {
-      steps {
-        bat 'call .venv\\Scripts\\activate && python src/train_regression.py --users data/users.csv --flights data/flights.csv --hotels data/hotels.csv'
-      }
-    }
-
-    stage('Build Docker Image') {
-      when { expression { return fileExists('Dockerfile') } }
-      steps {
-        bat 'docker --version'
-        bat 'docker build -t voyage-analytics-app .'
-      }
-    }
-
-    stage('Push Docker Image') {
-      steps {
-        echo 'Skipping Docker push for local build'
-      }
-    }
-
-    stage('Post Actions') {
-      steps {
-        echo '✅ CI/CD Pipeline completed successfully.'
-      }
-    }
-  }
-
-  post {
-    failure { echo '❌ CI/CD Pipeline failed.' }
-  }
 }
