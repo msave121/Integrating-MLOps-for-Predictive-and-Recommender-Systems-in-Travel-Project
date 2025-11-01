@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+env/
+venv/
+*.egg-info/
+build/
+dist/
+
+# Logs and temporary files
+*.log
+airflow/logs/
+airflow/tmp/
+airflow/plugins/__pycache__/
+logs/
+tmp/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Docker
+*.pid
+*.tar
+
+# OS
+.DS_Store
+Thumbs.db

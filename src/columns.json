@@ -1,0 +1,22 @@
+{
+  "num_cols": [
+    "time",
+    "distance",
+    "age",
+    "days",
+    "price_hotel",
+    "total"
+  ],
+  "cat_cols": [
+    "from",
+    "to",
+    "flightType",
+    "agency",
+    "company",
+    "name",
+    "gender",
+    "name_hotel",
+    "place"
+  ],
+  "target": "price"
+}
