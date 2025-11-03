@@ -2,93 +2,84 @@ pipeline {
     agent any
 
     environment {
-        // ✅ Fix Unicode error on Windows (force UTF-8)
-        PYTHONIOENCODING = "utf-8"
-        CHCP = "65001"
-
-        // Docker + Model Paths
-        DOCKER_IMAGE = "msave12345/voyage-analytics-app"
-        MODEL_PATH = "model/voyage_model/1/model.pkl"
+        VENV_DIR = ".venv"
+        DOCKER_IMAGE = "voyage-analytics-app:latest"
+        AIRFLOW_API = "http://localhost:8080/api/v1/dags/reload_model_dag/dagRuns"
     }
 
     stages {
 
-        stage('Checkout') {
+        stage('🧹 Cleanup Workspace') {
             steps {
-                git url: 'https://github.com/msave121/msave121.git', branch: 'main'
-            }
-        }
-
-        stage('Install Dependencies') {
-            steps {
+                echo 'Cleaning old virtual environment...'
                 bat '''
-                chcp 65001 > NUL
-                python -m venv .venv
-                call .venv\\Scripts\\activate
-                python -m pip install --upgrade pip
-                pip install -r requirements.txt
+                IF EXIST %VENV_DIR% (
+                    rmdir /S /Q %VENV_DIR%
+                )
                 '''
             }
         }
 
-        stage('Run Tests') {
+        stage('📦 Install Dependencies') {
             steps {
+                echo 'Setting up Python virtual environment...'
                 bat '''
-                chcp 65001 > NUL
-                call .venv\\Scripts\\activate
-                pytest || echo "⚠ No tests found, skipping..."
+                python -m venv %VENV_DIR%
+                call %VENV_DIR%\\Scripts\\activate
+                pip install --upgrade pip
+                pip install --no-cache-dir -r requirements.txt
                 '''
             }
         }
 
-        stage('Train & Save Model') {
+        stage('✅ Run Tests') {
             steps {
+                echo 'Running tests...'
                 bat '''
-                chcp 65001 > NUL
-                call .venv\\Scripts\\activate
-                python src/train_regression.py
+                call %VENV_DIR%\\Scripts\\activate
+                pytest --maxfail=1 --disable-warnings -q
                 '''
             }
         }
 
-        stage('Build Docker Image') {
+        stage('🤖 Train & Save Model') {
             steps {
+                echo 'Training and saving ML model...'
+                bat '''
+                call %VENV_DIR%\\Scripts\\activate
+                python src\\train_regression.py
+                '''
+            }
+        }
+
+        stage('🐳 Build Docker Image') {
+            steps {
+                echo 'Building Docker image...'
                 bat '''
                 docker build -t %DOCKER_IMAGE% .
                 '''
             }
         }
 
-        stage('Push Docker Image') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    bat '''
-                    docker login -u %DOCKER_USER% -p %DOCKER_PASS%
-                    docker push %DOCKER_IMAGE%
-                    '''
-                }
+        stage('🚀 Trigger Airflow Reload') {
+            when {
+                expression { return true }  // set to false if you want to skip
             }
-        }
-
-        stage('Trigger Airflow Reload') {
             steps {
-                script {
-                    // Trigger Airflow REST API DAG (reload_model_dag)
-                    def response = bat(script: '''
-                    curl -X POST "http://localhost:8080/api/v1/dags/reload_model_dag/dagRuns" ^
+                echo 'Triggering Airflow DAG reload...'
+                bat '''
+                curl -X POST %AIRFLOW_API% ^
                     -H "Content-Type: application/json" ^
                     -u "airflow:airflow" ^
-                    -d "{\\"conf\\": {\\"message\\": \\"Model retrained via Jenkins\\"}}"
-                    ''', returnStatus: true)
-                    echo "Airflow API call status: ${response}"
-                }
+                    -d "{}"
+                '''
             }
         }
     }
 
     post {
         success {
-            echo "✅ CI/CD Pipeline completed successfully!"
+            echo "✅ CI/CD pipeline completed successfully!"
         }
         failure {
             echo "❌ CI/CD Pipeline failed."
