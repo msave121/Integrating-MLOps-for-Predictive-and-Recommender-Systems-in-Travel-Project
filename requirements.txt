@@ -1,16 +1,19 @@
-# Core scientific stack (Python 3.12 compatible)
+# ------------------------------
+# Voyage Analytics dependencies
+# Compatible with Python 3.12 and Jenkins
+# ------------------------------
+
+# Core data libraries
 numpy==1.26.4
 pandas==2.2.2
 scikit-learn==1.5.2
 
-# Visualization (safe versions)
+# Visualization
 matplotlib==3.8.4
 seaborn==0.13.2
 
-# MLflow for model tracking
+# MLOps / Model management
 mlflow==2.14.3
-
-# API calls to Airflow
 requests==2.32.3
 python-dotenv==1.0.1
 
@@ -22,7 +25,15 @@ pyyaml==6.0.2
 # Testing
 pytest==7.4.3
 
-# Profiling (safe version)
+# ------------------------------
+# Data profiling (fixed for Python 3.12)
+# ------------------------------
+# htmlmin (old version) breaks on Python 3.12
+# htmlmin2 is a drop-in replacement
 htmlmin2==0.1.13
 ydata-profiling==4.8.3
 
+# ------------------------------
+# Dependency resolver setting
+# ------------------------------
+--use-deprecated=legacy-resolver
