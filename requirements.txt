@@ -1,35 +1,19 @@
-# ------------------------------
-# Voyage Analytics dependencies
-# Compatible with Python 3.12 and Jenkins
-# ------------------------------
-
-# Core data libraries
+# --- Core dependencies ---
 numpy==1.26.4
 pandas==2.2.2
 scikit-learn==1.5.2
-
-# Visualization
 matplotlib==3.8.4
 seaborn==0.13.2
-
-# MLOps / Model management
-mlflow==2.14.3
 requests==2.32.3
 python-dotenv==1.0.1
-
-# Utilities
 joblib==1.4.2
 tqdm==4.66.4
-pyyaml==6.0.2
-
-# Testing
+PyYAML==6.0.2
 pytest==7.4.3
 
-# ------------------------------
-# Data profiling (patched for Python 3.12)
-# ------------------------------
-htmlmin2==0.1.13
+# --- MLflow for model tracking ---
+mlflow==2.14.3
 
-# Install ydata-profiling manually, skipping deps to avoid htmlmin conflict
-# (this will still work because all its deps are already installed)
---no-deps ydata-profiling==4.8.3
+# --- Optional utilities ---
+htmlmin2==0.1.13        # works on Python 3.12
+ydata-profiling==4.8.3  # latest version compatible with Python 3.12

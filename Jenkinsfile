@@ -16,11 +16,8 @@ pipeline {
             steps {
                 bat '''
                 echo Setting up Python 3.12 virtual environment...
-                REM Use your exact Python 3.12 path
                 "C:\\Users\\HP\\AppData\\Local\\Programs\\Python\\Python312\\python.exe" -m venv .venv
-
                 call .venv\\Scripts\\activate
-                python --version
                 python -m pip install --upgrade pip
                 '''
             }
@@ -30,8 +27,8 @@ pipeline {
             steps {
                 bat '''
                 call .venv\\Scripts\\activate
-                echo Installing requirements (binary-only)...
-                pip install --only-binary=:all: -r requirements.txt
+                echo Installing dependencies...
+                pip install -r requirements.txt
                 '''
             }
         }
@@ -40,7 +37,8 @@ pipeline {
             steps {
                 bat '''
                 call .venv\\Scripts\\activate
-                python src/train_regression.py --users data/users.csv --flights data/flights.csv --hotels data/hotels.csv
+                echo Training model...
+                python src\\train_regression.py --users data\\users.csv --flights data\\flights.csv --hotels data\\hotels.csv
                 '''
             }
         }
@@ -49,7 +47,8 @@ pipeline {
             steps {
                 bat '''
                 call .venv\\Scripts\\activate
-                python src/test_model.py
+                echo Testing model...
+                python src\\test_model.py
                 '''
             }
         }
