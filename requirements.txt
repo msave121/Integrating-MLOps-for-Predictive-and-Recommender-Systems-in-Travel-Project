@@ -1,4 +1,4 @@
-# --- Core dependencies ---
+# Core
 numpy==1.26.4
 pandas==2.2.2
 scikit-learn==1.5.2
@@ -11,10 +11,9 @@ tqdm==4.66.4
 PyYAML==6.0.2
 pytest==7.4.3
 
-# --- MLflow for model tracking ---
+# MLflow
 mlflow==2.14.3
 
-# --- Optional utilities ---
-htmlmin2==0.1.13        # works on Python 3.12
-data-profiling==1.0.0
-
+# Profiling (works on Py 3.12)
+ydata-profiling==4.8.3
+htmlmin2==0.1.13
