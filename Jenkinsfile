@@ -1,9 +1,14 @@
 pipeline {
     agent any
 
+    environment {
+        PYTHON = "C:\\Users\\HP\\AppData\\Local\\Programs\\Python\\Python312\\python.exe"
+        PYTHONUTF8 = "1"   // fix UnicodeEncodeError on Windows console
+    }
+
     stages {
 
-        stage('Clean Workspace') {
+        stage('🧹 Clean Workspace') {
             steps {
                 bat '''
                 echo Cleaning old virtual environment...
@@ -12,48 +17,49 @@ pipeline {
             }
         }
 
-        stage('Setup Python Virtualenv') {
+        stage('🐍 Setup Python 3.12 Virtualenv') {
             steps {
                 bat '''
-                echo Creating new virtual environment...
-                python -m venv .venv
+                echo Setting up Python 3.12 virtual environment...
+                "%PYTHON%" -m venv .venv
                 call .venv\\Scripts\\activate
-                python -m pip install --upgrade pip
+                python -m pip install --upgrade pip setuptools wheel
                 '''
             }
         }
 
-        stage('Install Dependencies') {
+        stage('📦 Install Dependencies') {
             steps {
                 bat '''
-                echo Installing dependencies from requirements.txt...
+                echo Installing dependencies safely...
                 call .venv\\Scripts\\activate
-                pip install -r requirements.txt
+                rem install prebuilt core packages first
+                pip install numpy==1.26.4 pandas==2.2.2 scikit-learn==1.4.2
+                rem now install all remaining deps
+                pip install -r requirements.txt --only-binary=:all:
                 '''
             }
         }
 
-        stage('Build Model') {
+        stage('🏗️ Build Model') {
             steps {
                 bat '''
-                echo Running training script...
                 call .venv\\Scripts\\activate
                 python src/train_regression.py --users data/users.csv --flights data/flights.csv --hotels data/hotels.csv
                 '''
             }
         }
 
-        stage('Test Model') {
+        stage('🧠 Test Model') {
             steps {
                 bat '''
-                echo Running test script...
                 call .venv\\Scripts\\activate
                 python src/test_model.py
                 '''
             }
         }
 
-        stage('Deploy') {
+        stage('🚀 Deploy') {
             steps {
                 bat '''
                 echo Simulating deployment...
@@ -64,10 +70,10 @@ pipeline {
 
     post {
         always {
-            echo "Pipeline completed successfully."
+            echo "✅ Pipeline completed"
         }
         failure {
-            echo "Pipeline failed. Check logs for details."
+            echo "❌ Pipeline failed. Check logs for details."
         }
     }
 }
