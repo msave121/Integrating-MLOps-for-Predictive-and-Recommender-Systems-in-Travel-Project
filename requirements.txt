@@ -28,12 +28,5 @@ pytest==7.4.3
 # ------------------------------
 # Data profiling (fixed for Python 3.12)
 # ------------------------------
-# htmlmin (old version) breaks on Python 3.12
-# htmlmin2 is a drop-in replacement
 htmlmin2==0.1.13
 ydata-profiling==4.8.3
-
-# ------------------------------
-# Dependency resolver setting
-# ------------------------------
---use-deprecated=legacy-resolver
