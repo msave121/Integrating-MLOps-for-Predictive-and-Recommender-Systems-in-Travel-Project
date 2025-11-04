@@ -26,7 +26,10 @@ pyyaml==6.0.2
 pytest==7.4.3
 
 # ------------------------------
-# Data profiling (fixed for Python 3.12)
+# Data profiling (patched for Python 3.12)
 # ------------------------------
 htmlmin2==0.1.13
-ydata-profiling==4.8.3
+
+# Install ydata-profiling manually, skipping deps to avoid htmlmin conflict
+# (this will still work because all its deps are already installed)
+--no-deps ydata-profiling==4.8.3
