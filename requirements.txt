@@ -24,4 +24,5 @@ pytest==7.4.3
 
 # Profiling (safe version)
 htmlmin2==0.1.13
-ydata-profiling==4.7.0
+ydata-profiling==4.8.3
+
