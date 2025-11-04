@@ -16,4 +16,5 @@ mlflow==2.14.3
 
 # --- Optional utilities ---
 htmlmin2==0.1.13        # works on Python 3.12
-ydata-profiling==4.8.3  # latest version compatible with Python 3.12
+data-profiling==1.0.0
+

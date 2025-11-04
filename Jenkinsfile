@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         PYTHON = "C:\\Users\\HP\\AppData\\Local\\Programs\\Python\\Python312\\python.exe"
-        PYTHONUTF8 = "1"   // fix UnicodeEncodeError on Windows console
+        VENV_DIR = ".venv"
     }
 
     stages {
@@ -12,7 +12,7 @@ pipeline {
             steps {
                 bat '''
                 echo Cleaning old virtual environment...
-                if exist .venv rmdir /s /q .venv
+                if exist %VENV_DIR% rmdir /s /q %VENV_DIR%
                 '''
             }
         }
@@ -21,9 +21,10 @@ pipeline {
             steps {
                 bat '''
                 echo Setting up Python 3.12 virtual environment...
-                "%PYTHON%" -m venv .venv
-                call .venv\\Scripts\\activate
-                python -m pip install --upgrade pip setuptools wheel
+                "%PYTHON%" -m venv %VENV_DIR%
+                call %VENV_DIR%\\Scripts\\activate
+                python --version
+                python -m pip install --upgrade pip
                 '''
             }
         }
@@ -31,12 +32,10 @@ pipeline {
         stage('📦 Install Dependencies') {
             steps {
                 bat '''
-                echo Installing dependencies safely...
-                call .venv\\Scripts\\activate
-                rem install prebuilt core packages first
-                pip install numpy==1.26.4 pandas==2.2.2 scikit-learn==1.4.2
-                rem now install all remaining deps
-                pip install -r requirements.txt --only-binary=:all:
+                call %VENV_DIR%\\Scripts\\activate
+                echo Installing dependencies...
+                python -m pip install --upgrade setuptools wheel
+                pip install -r requirements.txt
                 '''
             }
         }
@@ -44,8 +43,9 @@ pipeline {
         stage('🏗️ Build Model') {
             steps {
                 bat '''
-                call .venv\\Scripts\\activate
-                python src/train_regression.py --users data/users.csv --flights data/flights.csv --hotels data/hotels.csv
+                call %VENV_DIR%\\Scripts\\activate
+                echo Training model...
+                python src\\train_regression.py --users data\\users.csv --flights data\\flights.csv --hotels data\\hotels.csv
                 '''
             }
         }
@@ -53,8 +53,9 @@ pipeline {
         stage('🧠 Test Model') {
             steps {
                 bat '''
-                call .venv\\Scripts\\activate
-                python src/test_model.py
+                call %VENV_DIR%\\Scripts\\activate
+                echo Testing model...
+                python src\\test_model.py
                 '''
             }
         }
@@ -62,7 +63,9 @@ pipeline {
         stage('🚀 Deploy') {
             steps {
                 bat '''
-                echo Simulating deployment...
+                call %VENV_DIR%\\Scripts\\activate
+                echo Deploying application...
+                python app.py
                 '''
             }
         }
