@@ -1,88 +1,69 @@
 pipeline {
     agent any
 
-    environment {
-        VENV_DIR = ".venv"
-        DOCKER_IMAGE = "voyage-analytics-app:latest"
-        AIRFLOW_API = "http://localhost:8080/api/v1/dags/reload_model_dag/dagRuns"
-    }
-
     stages {
 
-        stage('🧹 Cleanup Workspace') {
+        stage('🧹 Clean Workspace') {
             steps {
-                echo 'Cleaning old virtual environment...'
                 bat '''
-                IF EXIST %VENV_DIR% (
-                    rmdir /S /Q %VENV_DIR%
-                )
+                if exist .venv rmdir /s /q .venv
+                '''
+            }
+        }
+
+        stage('🐍 Setup Python Virtualenv') {
+            steps {
+                bat '''
+                python -m venv .venv
+                call .venv\\Scripts\\activate
+                python -m pip install --upgrade pip
                 '''
             }
         }
 
         stage('📦 Install Dependencies') {
             steps {
-                echo 'Setting up Python virtual environment...'
                 bat '''
-                python -m venv %VENV_DIR%
-                call %VENV_DIR%\\Scripts\\activate
-                pip install --upgrade pip
-                pip install --no-cache-dir -r requirements.txt
+                call .venv\\Scripts\\activate
+                echo Installing requirements (binary-only)...
+                pip install --only-binary=:all: -r requirements.txt
                 '''
             }
         }
 
-        stage('✅ Run Tests') {
+        stage('🏗️ Build Model') {
             steps {
-                echo 'Running tests...'
                 bat '''
-                call %VENV_DIR%\\Scripts\\activate
-                pytest --maxfail=1 --disable-warnings -q
+                call .venv\\Scripts\\activate
+                python src/train_regression.py --users data/users.csv --flights data/flights.csv --hotels data/hotels.csv
                 '''
             }
         }
 
-        stage('🤖 Train & Save Model') {
+        stage('🧠 Test Model') {
             steps {
-                echo 'Training and saving ML model...'
                 bat '''
-                call %VENV_DIR%\\Scripts\\activate
-                python src\\train_regression.py
+                call .venv\\Scripts\\activate
+                python src/test_model.py
                 '''
             }
         }
 
-        stage('🐳 Build Docker Image') {
+        stage('🚀 Deploy') {
             steps {
-                echo 'Building Docker image...'
                 bat '''
-                docker build -t %DOCKER_IMAGE% .
-                '''
-            }
-        }
-
-        stage('🚀 Trigger Airflow Reload') {
-            when {
-                expression { return true }  // set to false if you want to skip
-            }
-            steps {
-                echo 'Triggering Airflow DAG reload...'
-                bat '''
-                curl -X POST %AIRFLOW_API% ^
-                    -H "Content-Type: application/json" ^
-                    -u "airflow:airflow" ^
-                    -d "{}"
+                echo Simulating deployment...
                 '''
             }
         }
     }
 
     post {
-        success {
-            echo "✅ CI/CD pipeline completed successfully!"
+        always {
+            echo "✅ Pipeline completed"
         }
         failure {
-            echo "❌ CI/CD Pipeline failed."
+            echo "❌ Pipeline failed. Check logs for details."
         }
     }
 }
