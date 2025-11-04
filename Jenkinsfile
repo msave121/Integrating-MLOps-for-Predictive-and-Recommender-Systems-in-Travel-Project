@@ -3,7 +3,7 @@ pipeline {
 
     stages {
 
-        stage('🧹 Clean Workspace') {
+        stage('Clean Workspace') {
             steps {
                 bat '''
                 echo Cleaning old virtual environment...
@@ -12,48 +12,48 @@ pipeline {
             }
         }
 
-        stage('🐍 Setup Python 3.12 Virtualenv') {
+        stage('Setup Python Virtualenv') {
             steps {
                 bat '''
-                echo Setting up Python 3.12 virtual environment...
-                "C:\\Users\\HP\\AppData\\Local\\Programs\\Python\\Python312\\python.exe" -m venv .venv
+                echo Creating new virtual environment...
+                python -m venv .venv
                 call .venv\\Scripts\\activate
                 python -m pip install --upgrade pip
                 '''
             }
         }
 
-        stage('📦 Install Dependencies') {
+        stage('Install Dependencies') {
             steps {
                 bat '''
+                echo Installing dependencies from requirements.txt...
                 call .venv\\Scripts\\activate
-                echo Installing dependencies...
                 pip install -r requirements.txt
                 '''
             }
         }
 
-        stage('🏗️ Build Model') {
+        stage('Build Model') {
             steps {
                 bat '''
+                echo Running training script...
                 call .venv\\Scripts\\activate
-                echo Training model...
-                python src\\train_regression.py --users data\\users.csv --flights data\\flights.csv --hotels data\\hotels.csv
+                python src/train_regression.py --users data/users.csv --flights data/flights.csv --hotels data/hotels.csv
                 '''
             }
         }
 
-        stage('🧠 Test Model') {
+        stage('Test Model') {
             steps {
                 bat '''
+                echo Running test script...
                 call .venv\\Scripts\\activate
-                echo Testing model...
-                python src\\test_model.py
+                python src/test_model.py
                 '''
             }
         }
 
-        stage('🚀 Deploy') {
+        stage('Deploy') {
             steps {
                 bat '''
                 echo Simulating deployment...
@@ -64,10 +64,10 @@ pipeline {
 
     post {
         always {
-            echo "✅ Pipeline completed"
+            echo "Pipeline completed successfully."
         }
         failure {
-            echo "❌ Pipeline failed. Check logs for details."
+            echo "Pipeline failed. Check logs for details."
         }
     }
 }
