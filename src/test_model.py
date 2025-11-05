@@ -1,58 +1,49 @@
+# src/test_model.py
 import os
 import joblib
 import pandas as pd
-import sys
 
-def load_model():
-    """
-    Try to load the latest trained model from the Jenkins workspace.
-    """
-    model_path = os.path.join("mlruns", "0", "latest_model", "model.pkl")
-    if not os.path.exists(model_path):
-        print(f"[ERROR] Model not found at: {model_path}")
+def test_model():
+    print("[INFO] Testing model...")
+
+    # Define both possible model paths
+    jenkins_model_path = os.path.join("mlruns", "0", "latest_model", "model.pkl")
+    local_model_path = os.path.join("model", "voyage_model", "1", "model.pkl")
+
+    # Choose whichever exists
+    if os.path.exists(jenkins_model_path):
+        model_path = jenkins_model_path
+    elif os.path.exists(local_model_path):
+        model_path = local_model_path
+    else:
+        print(f"[ERROR] Model not found at either:\n - {jenkins_model_path}\n - {local_model_path}")
         print("[HINT] Run the '🏗️ Build Model' stage first to train and save the model.")
-        sys.exit(1)
+        exit(1)
 
+    print(f"[INFO] Loading model from: {model_path}")
+    model = joblib.load(model_path)
+
+    # --- Dummy test data for validation ---
+    # (You can replace this with a small real dataset if desired)
+    sample = pd.DataFrame({
+        "user_id": [1],
+        "origin": ["DEL"],
+        "destination": ["BOM"],
+        "days_until_flight": [10],
+        "airline": ["IndiGo"],
+        "num_hotels_visited": [5]
+    })
+
+    # Try prediction
     try:
-        print(f"[INFO] Loading model from: {model_path}")
-        model = joblib.load(model_path)
-        print("[INFO] ✅ Model successfully loaded.")
-        return model
+        prediction = model.predict(sample)
+        print(f"[SUCCESS] Model test prediction: {prediction[0]:.2f}")
     except Exception as e:
-        print(f"[ERROR] Failed to load model: {e}")
-        sys.exit(1)
+        print(f"[ERROR] Failed to test model: {e}")
+        exit(1)
 
-
-def test_model(model):
-    """
-    Basic smoke test to ensure the model can make predictions.
-    """
-    try:
-        # Create dummy data with same structure expected by pipeline
-        sample = pd.DataFrame({
-            "userAge": [32],
-            "userIncome": [70000],
-            "flightDistance": [1500],
-            "hotelRating": [4],
-            "numDays": [5],
-            "isHolidaySeason": [1],
-            "flightClass": ["Economy"],
-            "hotelLocation": ["CityCenter"],
-            "userGender": ["Female"],
-            "tripType": ["Leisure"]
-        })
-
-        print("[INFO] Running prediction on sample input...")
-        preds = model.predict(sample)
-        print(f"[INFO] ✅ Model prediction successful! Predicted price: {preds[0]:.2f}")
-
-    except Exception as e:
-        print(f"[ERROR] Model test failed: {e}")
-        sys.exit(1)
+    print("[INFO] ✅ Model test completed successfully!")
 
 
 if __name__ == "__main__":
-    print("[INFO] Testing model...")
-    model = load_model()
-    test_model(model)
-    print("[INFO] 🎯 Model test completed successfully.")
+    test_model()
