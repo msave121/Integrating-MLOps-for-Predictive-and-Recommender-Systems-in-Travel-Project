@@ -10,13 +10,14 @@ from features import prepare_X_y
 from preprocess import prepare_dataset
 
 def run_train(users_csv, flights_csv, hotels_csv=None):
-    print("INFO:_main_:Merging datasets...")
+    print("INFO:_main_: Merging datasets...")
     df = prepare_dataset(users_csv, flights_csv, hotels_csv)
 
-    print("INFO:_main_:[INFO] Preparing features and target...")
+    print("INFO:_main_: [INFO] Preparing features and target...")
     X, y, preprocessor, num_cols, cat_cols = prepare_X_y(df, target="price")
 
-    print(f"INFO:_main_:[INFO] Using {len(num_cols)} numeric and {len(cat_cols)} categorical columns.")
+    print(f"INFO:_main_: [INFO] Using {len(num_cols)} numeric and {len(cat_cols)} categorical columns.")
+    print(f"INFO:_main_: Training pipeline on {X.shape[0]} rows, {X.shape[1]} features")
 
     # --- Full pipeline with RandomForestRegressor ---
     pipeline = Pipeline([
@@ -28,22 +29,21 @@ def run_train(users_csv, flights_csv, hotels_csv=None):
         ))
     ])
 
-    print(f"INFO:_main_:Training pipeline on {X.shape[0]} rows, {X.shape[1]} features")
     pipeline.fit(X, y)
 
-    # --- Save columns.json
+    # --- Save columns.json ---
     os.makedirs("src", exist_ok=True)
     columns_info = {"num_cols": num_cols, "cat_cols": cat_cols, "target": "price"}
     with open("src/columns.json", "w") as f:
         json.dump(columns_info, f, indent=2)
-    print("INFO:_main_:✅ columns.json saved in src/")
+    print("INFO:_main_: columns.json saved in src/")
 
-    # --- Save full pipeline
+    # --- Save full pipeline ---
     model_dir = "model/voyage_model/1"
     os.makedirs(model_dir, exist_ok=True)
     joblib.dump(pipeline, os.path.join(model_dir, "model.pkl"))
-    print(f"INFO:_main_:✅ Full pipeline saved at {model_dir}/model.pkl")
-    print("INFO:_main_:🎯 Training complete!")
+    print(f"INFO:_main_: Full pipeline saved at {model_dir}/model.pkl")
+    print("INFO:_main_: Training complete successfully.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
