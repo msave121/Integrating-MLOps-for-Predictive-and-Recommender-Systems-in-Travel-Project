@@ -4,6 +4,7 @@ pipeline {
     environment {
         PYTHON = "C:\\Users\\HP\\AppData\\Local\\Programs\\Python\\Python312\\python.exe"
         VENV_DIR = ".venv"
+        PYTHONUTF8 = '1'          // ✅ Forces UTF-8 encoding on Windows
     }
 
     stages {
