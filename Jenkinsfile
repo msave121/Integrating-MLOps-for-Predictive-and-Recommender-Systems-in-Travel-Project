@@ -2,78 +2,73 @@ pipeline {
     agent any
 
     environment {
-        VENV_DIR = ".venv"
-        PYTHON = "${VENV_DIR}\\Scripts\\python.exe"
-        ACTIVATE = "call ${VENV_DIR}\\Scripts\\activate"
-        MODEL_PATH = "model\\voyage_model\\1\\model.pkl"
-        APP_PATH = "src\\app.py"
+        PYTHON = 'python'
+        VENV = '.venv\\Scripts\\activate'
     }
 
     stages {
-
-        stage('Setup Environment') {
+        stage('🧹 Clean Workspace') {
             steps {
-                echo "Setting up Python environment..."
+                echo 'Cleaning workspace...'
+                bat 'if exist model rmdir /s /q model'
+                bat 'if exist mlruns rmdir /s /q mlruns'
+            }
+        }
+
+        stage('🐍 Setup Virtual Environment') {
+            steps {
+                echo 'Setting up Python virtual environment...'
                 bat """
-                    if not exist %VENV_DIR% (
-                        python -m venv %VENV_DIR%
+                    if not exist .venv (
+                        python -m venv .venv
                     )
-                    call %VENV_DIR%\\Scripts\\activate
+                    call ${VENV}
                     pip install --upgrade pip
                     pip install -r requirements.txt
                 """
             }
         }
 
-        stage('Build Model') {
+        stage('🏗️ Build Model') {
             steps {
-                echo "Training model..."
+                echo 'Training model...'
                 bat """
-                    call %ACTIVATE%
-                    %PYTHON% src/train_regression.py --users data/users.csv --flights data/flights.csv --hotels data/hotels.csv
+                    call ${VENV}
+                    python src/train_regression.py --users data/users.csv --flights data/flights.csv --hotels data/hotels.csv
                 """
             }
         }
 
-        stage('Test Model') {
+        stage('🧠 Test Model') {
             steps {
-                echo "Testing model..."
+                echo 'Testing model...'
                 bat """
-                    call %ACTIVATE%
-                    if exist "%MODEL_PATH%" (
-                        echo [INFO] Model found at %MODEL_PATH%
-                        %PYTHON% src/test_model.py
-                    ) else (
-                        echo [ERROR] Model not found at %MODEL_PATH%
-                        exit /b 1
-                    )
+                    call ${VENV}
+                    python src/test_model.py
                 """
             }
         }
 
-        stage('Deploy') {
+        stage('🚀 Deploy') {
             steps {
-                echo "Deploying application..."
+                echo 'Deploying application...'
+                // Run Flask in background using "start /B"
                 bat """
-                    call %ACTIVATE%
-                    if exist "%APP_PATH%" (
-                        echo [INFO] Starting Flask app...
-                        %PYTHON% %APP_PATH%
-                    ) else (
-                        echo [ERROR] app.py not found at %APP_PATH%
-                        exit /b 1
-                    )
+                    call ${VENV}
+                    echo Starting Flask app in background...
+                    start /B python src/app.py
                 """
+                echo '✅ Flask app started successfully in background.'
             }
         }
     }
 
     post {
         success {
-            echo 'Pipeline completed successfully!'
+            echo '✅ Pipeline completed successfully!'
         }
         failure {
-            echo 'Pipeline failed. Check logs for details.'
+            echo '❌ Pipeline failed. Check logs for details.'
         }
     }
 }
