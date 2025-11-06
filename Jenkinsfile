@@ -51,14 +51,13 @@ pipeline {
 
         stage('🚀 Deploy') {
             steps {
-                echo 'Deploying application...'
-                // Run Flask in background using "start /B"
+                echo 'Deploying Flask application in background...'
                 bat """
                     call ${VENV}
-                    echo Starting Flask app in background...
-                    start /B python src/app.py
+                    echo Starting Flask app on port 5050...
+                    start /B cmd /c "python src/app.py > flask_log.txt 2>&1"
                 """
-                echo '✅ Flask app started successfully in background.'
+                echo '✅ Flask app started successfully (logs -> flask_log.txt)'
             }
         }
     }
@@ -66,6 +65,7 @@ pipeline {
     post {
         success {
             echo '✅ Pipeline completed successfully!'
+            echo 'You can access your Flask app at: http://127.0.0.1:5050'
         }
         failure {
             echo '❌ Pipeline failed. Check logs for details.'
