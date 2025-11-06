@@ -11,7 +11,7 @@ pipeline {
 
     stages {
 
-        stage('⚙️ Setup Environment') {
+        stage('Setup Environment') {
             steps {
                 echo "Setting up Python environment..."
                 bat """
@@ -25,7 +25,7 @@ pipeline {
             }
         }
 
-        stage('🏗️ Build Model') {
+        stage('Build Model') {
             steps {
                 echo "Training model..."
                 bat """
@@ -35,7 +35,7 @@ pipeline {
             }
         }
 
-        stage('🧠 Test Model') {
+        stage('Test Model') {
             steps {
                 echo "Testing model..."
                 bat """
@@ -51,7 +51,7 @@ pipeline {
             }
         }
 
-        stage('🚀 Deploy') {
+        stage('Deploy') {
             steps {
                 echo "Deploying application..."
                 bat """
@@ -70,10 +70,10 @@ pipeline {
 
     post {
         success {
-            echo '✅ Pipeline completed successfully!'
+            echo 'Pipeline completed successfully!'
         }
         failure {
-            echo '❌ Pipeline failed. Check logs for details.'
+            echo 'Pipeline failed. Check logs for details.'
         }
     }
 }
