@@ -7,8 +7,8 @@ pipeline {
         APP_PATH = 'src\\app.py'
         MODEL_PATH = 'model\\voyage_model\\1\\model.pkl'
         FLASK_LOG = 'flask_log.txt'
-        AIRFLOW_USER = 'manasvi'
-        AIRFLOW_PASS = 'Save@123'
+        AIRFLOW_USER = 'admin'
+        AIRFLOW_PASS = 'admin'
         AIRFLOW_DAG_ID = 'reload_model_dag'
         AIRFLOW_URL = 'http://localhost:8080/api/v1/dags/${AIRFLOW_DAG_ID}/dagRuns'
     }
@@ -53,7 +53,13 @@ pipeline {
                 echo 'Testing model...'
                 bat """
                     call ${VENV}
-                    ${PYTHON} src/test_model.py
+                    if exist "${MODEL_PATH}" (
+                        echo [INFO] Model found at ${MODEL_PATH}
+                        ${PYTHON} src/test_model.py
+                    ) else (
+                        echo [ERROR] Model not found at ${MODEL_PATH}
+                        exit /b 1
+                    )
                 """
             }
         }
@@ -62,38 +68,44 @@ pipeline {
             steps {
                 echo 'Starting Flask app in background...'
 
-                // 🧹 Kill any existing Flask process to avoid duplicates
-                bat """
-                    for /f "tokens=5" %%p in ('netstat -aon ^| findstr :5050 ^| findstr LISTENING') do taskkill /F /PID %%p
-                """
+                // 🧹 Kill old Flask process (if running)
+                bat '''
+                    for /f "tokens=5" %%p in ('netstat -aon ^| findstr :5050 ^| findstr LISTENING') do (
+                        echo Killing old Flask process with PID %%p
+                        taskkill /F /PID %%p
+                    )
+                '''
 
-                // 🚀 Start Flask safely (no redirection issue)
+                // 🚀 Start Flask app in background
                 bat """
                     call ${VENV}
-                    start cmd /k "${PYTHON} ${APP_PATH} > ${FLASK_LOG} 2>&1"
-                    echo Waiting for Flask to start...
+                    echo [INFO] Launching Flask app...
+                    start cmd /c "${PYTHON} ${APP_PATH} > ${FLASK_LOG} 2>&1"
+                    echo [INFO] Waiting 10 seconds for Flask to start...
                     timeout /t 10 >nul
                 """
 
-                // ✅ Check Flask health
+                // 🧪 Check Flask health
                 script {
                     def success = false
                     for (int i = 0; i < 3; i++) {
                         echo "🔁 Checking Flask availability (attempt ${i + 1}/3)..."
                         def result = bat(returnStatus: true, script: 'curl -s http://127.0.0.1:5050')
                         if (result == 0) {
-                            echo '✅ Flask app is responding at http://127.0.0.1:5050'
+                            echo '✅ Flask app is running at http://127.0.0.1:5050'
                             success = true
                             break
                         }
                         sleep 5
                     }
                     if (!success) {
-                        error('❌ Flask app did not start after 3 attempts.')
+                        echo '❌ Flask app did not respond after 3 attempts — showing log below.'
+                        bat 'if exist flask_log.txt type flask_log.txt'
+                        error('Flask did not start properly.')
                     }
                 }
 
-                // 🧾 Print Flask logs to Jenkins console
+                // 🧾 Print logs if everything’s fine
                 bat """
                     echo ========= FLASK APP LOG =========
                     if exist ${FLASK_LOG} type ${FLASK_LOG}
@@ -104,7 +116,7 @@ pipeline {
 
         stage('🌬️ Trigger Airflow DAG') {
             steps {
-                echo 'Triggering Airflow DAG...'
+                echo 'Triggering Airflow DAG via REST API...'
                 bat """
                     curl -u ${AIRFLOW_USER}:${AIRFLOW_PASS} ^
                         -X POST "${AIRFLOW_URL}" ^
@@ -119,16 +131,21 @@ pipeline {
     post {
         success {
             echo '✅ CI/CD Pipeline completed successfully — Model trained, tested, deployed, and DAG triggered!'
+            // 🛑 Stop Flask app after success
+            bat '''
+                for /f "tokens=5" %%p in ('netstat -aon ^| findstr :5050 ^| findstr LISTENING') do (
+                    echo Stopping Flask app with PID %%p
+                    taskkill /F /PID %%p
+                )
+            '''
         }
         failure {
             echo '❌ Pipeline failed. Check logs for details.'
-            bat """
-                if exist ${FLASK_LOG} (
-                    echo ========= FLASK LOG (ON FAILURE) =========
-                    type ${FLASK_LOG}
-                    echo ==========================================
-                )
-            """
+            bat '''
+                echo ========= FLASK LOG ON FAILURE =========
+                if exist flask_log.txt type flask_log.txt
+                echo ========================================
+            '''
         }
     }
 }
