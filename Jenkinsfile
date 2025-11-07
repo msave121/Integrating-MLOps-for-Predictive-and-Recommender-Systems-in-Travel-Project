@@ -2,24 +2,36 @@ pipeline {
     agent any
 
     environment {
-        VENV_DIR = ".venv"
-        PYTHON = "${VENV_DIR}\\Scripts\\python.exe"
-        ACTIVATE = "call ${VENV_DIR}\\Scripts\\activate"
-        MODEL_PATH = "model\\voyage_model\\1\\model.pkl"
-        APP_PATH = "src\\app.py"
-        FLASK_LOG = "flask_log.txt"
+        VENV = '.venv\\Scripts\\activate'
+        PYTHON = '.venv\\Scripts\\python.exe'
+        APP_PATH = 'src\\app.py'
+        MODEL_PATH = 'model\\voyage_model\\1\\model.pkl'
+        FLASK_LOG = 'flask_log.txt'
+        AIRFLOW_USER = 'manasvi'
+        AIRFLOW_PASS = 'Save@123'
+        AIRFLOW_DAG_ID = 'reload_model_dag'
+        AIRFLOW_URL = "http://localhost:8080/api/v1/dags/reload_model_dag/dagRuns"
     }
 
     stages {
 
-        stage('⚙️ Setup Environment') {
+        stage('🧹 Clean Workspace') {
             steps {
-                echo "Setting up Python environment..."
+                echo 'Cleaning workspace...'
+                bat 'if exist model rmdir /s /q model'
+                bat 'if exist mlruns rmdir /s /q mlruns'
+                bat 'if exist flask_log.txt del /f /q flask_log.txt'
+            }
+        }
+
+        stage('🐍 Setup Virtual Environment') {
+            steps {
+                echo 'Setting up Python virtual environment...'
                 bat """
-                    if not exist %VENV_DIR% (
-                        python -m venv %VENV_DIR%
+                    if not exist .venv (
+                        python -m venv .venv
                     )
-                    call %VENV_DIR%\\Scripts\\activate
+                    call ${VENV}
                     pip install --upgrade pip
                     pip install -r requirements.txt
                 """
@@ -28,26 +40,20 @@ pipeline {
 
         stage('🏗️ Build Model') {
             steps {
-                echo "Training model..."
+                echo 'Training model...'
                 bat """
-                    call %ACTIVATE%
-                    %PYTHON% src/train_regression.py --users data/users.csv --flights data/flights.csv --hotels data/hotels.csv
+                    call ${VENV}
+                    ${PYTHON} src/train_regression.py --users data/users.csv --flights data/flights.csv --hotels data/hotels.csv
                 """
             }
         }
 
         stage('🧠 Test Model') {
             steps {
-                echo "Testing model..."
+                echo 'Testing model...'
                 bat """
-                    call %ACTIVATE%
-                    if exist "%MODEL_PATH%" (
-                        echo [INFO] Model found at %MODEL_PATH%
-                        %PYTHON% src/test_model.py
-                    ) else (
-                        echo [ERROR] Model not found at %MODEL_PATH%
-                        exit /b 1
-                    )
+                    call ${VENV}
+                    ${PYTHON} src/test_model.py
                 """
             }
         }
@@ -56,44 +62,55 @@ pipeline {
             steps {
                 echo 'Starting Flask app in background...'
                 bat """
-                    call %ACTIVATE%
-                    if exist %FLASK_LOG% del %FLASK_LOG%
-                    start cmd /c "%PYTHON% %APP_PATH% > %FLASK_LOG% 2>&1"
+                    call ${VENV}
+                    start cmd /c "${PYTHON} ${APP_PATH} > ${FLASK_LOG} 2>&1"
+                    echo Waiting for Flask to start...
+                    timeout /t 10 >nul
                 """
 
-                echo '⌛ Waiting for Flask app to start...'
-                // Fix: run loop using single-line style so Jenkins doesn’t break
+                script {
+                    def success = false
+                    for (int i = 0; i < 3; i++) {
+                        echo "🔁 Checking Flask availability (attempt ${i + 1}/3)..."
+                        def result = bat(returnStatus: true, script: 'curl -s http://127.0.0.1:5050')
+                        if (result == 0) {
+                            echo '✅ Flask app is responding at http://127.0.0.1:5050'
+                            success = true
+                            break
+                        }
+                        sleep 5
+                    }
+                    if (!success) {
+                        error('❌ Flask app did not start after 3 attempts.')
+                    }
+                }
+
+                echo '📜 Showing last lines of Flask log:'
+                bat 'type flask_log.txt'
+            }
+        }
+
+        stage('🌬️ Trigger Airflow DAG') {
+            steps {
+                echo 'Triggering Airflow DAG...'
                 bat """
-                    setlocal enabledelayedexpansion
-                    set SUCCESS=0
-                    for /L %%i in (1,1,20) do (
-                        curl -s http://127.0.0.1:5050 >nul 2>&1
-                        if !errorlevel! EQU 0 (
-                            echo [✅] Flask app started successfully at http://127.0.0.1:5050
-                            set SUCCESS=1
-                            goto :done
-                        )
-                        echo Waiting for Flask to start (%%i/20)...
-                        timeout /t 2 >nul
-                    )
-                    :done
-                    if !SUCCESS! EQU 0 (
-                        echo [ERROR] Flask did not start in time.
-                        type %FLASK_LOG%
-                        exit /b 1
-                    )
-                    endlocal
+                    curl -u ${AIRFLOW_USER}:${AIRFLOW_PASS} ^
+                        -X POST "${AIRFLOW_URL}" ^
+                        -H "Content-Type: application/json" ^
+                        -d "{\\"conf\\": {\\"triggered_by\\": \\"jenkins\\"}}"
                 """
+                echo '✅ Airflow DAG triggered successfully.'
             }
         }
     }
 
     post {
         success {
-            echo '✅ Pipeline completed successfully!'
+            echo '✅ CI/CD Pipeline completed successfully — Model trained, tested, deployed, and Airflow DAG triggered!'
         }
         failure {
             echo '❌ Pipeline failed. Check logs for details.'
+            bat 'if exist flask_log.txt type flask_log.txt'
         }
     }
 }
