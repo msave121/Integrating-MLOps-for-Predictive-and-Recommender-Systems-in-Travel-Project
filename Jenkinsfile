@@ -62,18 +62,27 @@ pipeline {
                 """
 
                 echo '⌛ Waiting for Flask app to start...'
+                // Fix: run loop using single-line style so Jenkins doesn’t break
                 bat """
+                    setlocal enabledelayedexpansion
+                    set SUCCESS=0
                     for /L %%i in (1,1,20) do (
-                        curl -s http://127.0.0.1:5050 >nul 2>&1 && (
+                        curl -s http://127.0.0.1:5050 >nul 2>&1
+                        if !errorlevel! EQU 0 (
                             echo [✅] Flask app started successfully at http://127.0.0.1:5050
-                            exit /b 0
+                            set SUCCESS=1
+                            goto :done
                         )
                         echo Waiting for Flask to start (%%i/20)...
                         timeout /t 2 >nul
                     )
-                    echo [ERROR] Flask did not start in time.
-                    type %FLASK_LOG%
-                    exit /b 1
+                    :done
+                    if !SUCCESS! EQU 0 (
+                        echo [ERROR] Flask did not start in time.
+                        type %FLASK_LOG%
+                        exit /b 1
+                    )
+                    endlocal
                 """
             }
         }
