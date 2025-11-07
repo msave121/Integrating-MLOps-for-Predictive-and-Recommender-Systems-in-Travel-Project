@@ -7,6 +7,7 @@ pipeline {
         ACTIVATE = "call ${VENV_DIR}\\Scripts\\activate"
         MODEL_PATH = "model\\voyage_model\\1\\model.pkl"
         APP_PATH = "src\\app.py"
+        FLASK_LOG = "flask_log.txt"
     }
 
     stages {
@@ -51,22 +52,29 @@ pipeline {
             }
         }
 
-        stage('🚀 Deploy') {
+        stage('🚀 Deploy Flask App') {
             steps {
-                echo "Deploying Flask app..."
+                echo 'Starting Flask app in background...'
                 bat """
                     call %ACTIVATE%
-                    if exist "%APP_PATH%" (
-                        echo [INFO] Starting Flask app in background...
-                        start cmd /c "python %APP_PATH% > flask_log.txt 2>&1"
-                        timeout /t 5 >nul
-                        curl http://127.0.0.1:5050 || (echo [ERROR] Flask did not start & exit /b 1)
-                    ) else (
-                        echo [ERROR] app.py not found at %APP_PATH%
-                        exit /b 1
-                    )
+                    if exist %FLASK_LOG% del %FLASK_LOG%
+                    start cmd /c "%PYTHON% %APP_PATH% > %FLASK_LOG% 2>&1"
                 """
-                echo "✅ Flask app started successfully at http://127.0.0.1:5050"
+
+                echo '⌛ Waiting for Flask app to start...'
+                bat """
+                    for /L %%i in (1,1,20) do (
+                        curl -s http://127.0.0.1:5050 >nul 2>&1 && (
+                            echo [✅] Flask app started successfully at http://127.0.0.1:5050
+                            exit /b 0
+                        )
+                        echo Waiting for Flask to start (%%i/20)...
+                        timeout /t 2 >nul
+                    )
+                    echo [ERROR] Flask did not start in time.
+                    type %FLASK_LOG%
+                    exit /b 1
+                """
             }
         }
     }
