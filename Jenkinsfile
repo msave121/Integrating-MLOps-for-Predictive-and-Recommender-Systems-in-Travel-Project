@@ -2,7 +2,6 @@ pipeline {
     agent any
 
     environment {
-        VENV = '.venv\\Scripts\\activate'
         PYTHON = '.venv\\Scripts\\python.exe'
         APP_PATH = 'src\\app.py'
         MODEL_PATH = 'model\\voyage_model\\1\\model.pkl'
@@ -16,7 +15,6 @@ pipeline {
     }
 
     stages {
-
         stage('🧹 Clean Workspace') {
             steps {
                 echo 'Cleaning workspace...'
@@ -33,9 +31,8 @@ pipeline {
                     if not exist .venv (
                         python -m venv .venv
                     )
-                    call ${VENV}
-                    pip install --upgrade pip
-                    pip install -r requirements.txt
+                    ${PYTHON} -m pip install --upgrade pip
+                    ${PYTHON} -m pip install -r requirements.txt
                 """
             }
         }
@@ -44,7 +41,6 @@ pipeline {
             steps {
                 echo 'Training model...'
                 bat """
-                    call ${VENV}
                     ${PYTHON} src/train_regression.py --users data/users.csv --flights data/flights.csv --hotels data/hotels.csv
                 """
             }
@@ -54,7 +50,6 @@ pipeline {
             steps {
                 echo 'Testing model...'
                 bat """
-                    call ${VENV}
                     ${PYTHON} src/test_model.py
                 """
             }
@@ -69,12 +64,11 @@ pipeline {
                         taskkill /F /PID %%p
                     )
 
-                    call ${VENV}
                     start cmd /c "${PYTHON} ${APP_PATH} > ${FLASK_LOG} 2>&1"
                     timeout /t 8
                 """
 
-                // Verify Flask is live
+                // Verify Flask is running
                 bat """
                     curl -s http://127.0.0.1:${FLASK_PORT}
                 """
