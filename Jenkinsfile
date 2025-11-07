@@ -10,7 +10,7 @@ pipeline {
         AIRFLOW_USER = 'manasvi'
         AIRFLOW_PASS = 'Save@123'
         AIRFLOW_DAG_ID = 'reload_model_dag'
-        AIRFLOW_URL = "http://localhost:8080/api/v1/dags/reload_model_dag/dagRuns"
+        AIRFLOW_URL = 'http://localhost:8080/api/v1/dags/${AIRFLOW_DAG_ID}/dagRuns'
     }
 
     stages {
@@ -20,7 +20,7 @@ pipeline {
                 echo 'Cleaning workspace...'
                 bat 'if exist model rmdir /s /q model'
                 bat 'if exist mlruns rmdir /s /q mlruns'
-                bat 'if exist flask_log.txt del /f /q flask_log.txt'
+                bat 'if exist flask_log.txt del flask_log.txt'
             }
         }
 
@@ -61,13 +61,21 @@ pipeline {
         stage('🚀 Deploy Flask App') {
             steps {
                 echo 'Starting Flask app in background...'
+
+                // 🧹 Kill any existing Flask process to avoid duplicates
+                bat """
+                    for /f "tokens=5" %%p in ('netstat -aon ^| findstr :5050 ^| findstr LISTENING') do taskkill /F /PID %%p
+                """
+
+                // 🚀 Start Flask safely (no redirection issue)
                 bat """
                     call ${VENV}
-                    start cmd /c "${PYTHON} ${APP_PATH} > ${FLASK_LOG} 2>&1"
+                    start cmd /k "${PYTHON} ${APP_PATH} > ${FLASK_LOG} 2>&1"
                     echo Waiting for Flask to start...
                     timeout /t 10 >nul
                 """
 
+                // ✅ Check Flask health
                 script {
                     def success = false
                     for (int i = 0; i < 3; i++) {
@@ -85,8 +93,12 @@ pipeline {
                     }
                 }
 
-                echo '📜 Showing last lines of Flask log:'
-                bat 'type flask_log.txt'
+                // 🧾 Print Flask logs to Jenkins console
+                bat """
+                    echo ========= FLASK APP LOG =========
+                    if exist ${FLASK_LOG} type ${FLASK_LOG}
+                    echo =================================
+                """
             }
         }
 
@@ -106,11 +118,17 @@ pipeline {
 
     post {
         success {
-            echo '✅ CI/CD Pipeline completed successfully — Model trained, tested, deployed, and Airflow DAG triggered!'
+            echo '✅ CI/CD Pipeline completed successfully — Model trained, tested, deployed, and DAG triggered!'
         }
         failure {
             echo '❌ Pipeline failed. Check logs for details.'
-            bat 'if exist flask_log.txt type flask_log.txt'
+            bat """
+                if exist ${FLASK_LOG} (
+                    echo ========= FLASK LOG (ON FAILURE) =========
+                    type ${FLASK_LOG}
+                    echo ==========================================
+                )
+            """
         }
     }
 }
