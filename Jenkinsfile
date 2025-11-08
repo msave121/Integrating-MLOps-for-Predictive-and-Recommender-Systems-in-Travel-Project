@@ -1,18 +1,87 @@
-stage('🚀 Deploy Flask App') {
-    steps {
-        bat '''
-        echo Starting Flask app...
-        for /F "tokens=5" %p in ('netstat -aon ^| findstr :5055 ^| findstr LISTENING') do (
-            echo Killing old Flask process with PID %p
-            taskkill /F /PID %p
-        )
+pipeline {
+    agent any
 
-        echo Starting new Flask process...
-        start "" cmd /c ".venv\\Scripts\\python.exe src\\app.py > flask_log.txt 2>&1"
-        timeout /t 10 >nul
+    environment {
+        PYTHON = ".venv\\Scripts\\python.exe"
+        FLASK_PORT = "5055"
+    }
 
-        echo Checking if Flask started...
-        type flask_log.txt
-        '''
+    stages {
+
+        stage('🧹 Cleanup Workspace') {
+            steps {
+                bat '''
+                echo Cleaning workspace...
+                if exist flask_log.txt del /f /q flask_log.txt
+                for /F "tokens=5" %p in ('netstat -aon ^| findstr :%FLASK_PORT% ^| findstr LISTENING') do (
+                    echo Killing existing Flask process with PID %p
+                    taskkill /F /PID %p
+                )
+                '''
+            }
+        }
+
+        stage('📦 Setup Environment') {
+            steps {
+                bat '''
+                echo Activating virtual environment...
+                if not exist .venv (
+                    echo Creating new virtual environment...
+                    python -m venv .venv
+                )
+                call .venv\\Scripts\\activate
+                echo Installing dependencies...
+                pip install --upgrade pip setuptools wheel
+                pip install -r requirements.txt
+                '''
+            }
+        }
+
+        stage('🚀 Deploy Flask App') {
+            steps {
+                bat '''
+                echo Starting Flask app on port %FLASK_PORT%...
+                for /F "tokens=5" %p in ('netstat -aon ^| findstr :%FLASK_PORT% ^| findstr LISTENING') do (
+                    echo Killing old Flask process with PID %p
+                    taskkill /F /PID %p
+                )
+
+                echo Launching Flask app...
+                start "" cmd /c "%PYTHON% src\\app.py > flask_log.txt 2>&1"
+                echo Waiting for Flask to start...
+                timeout /t 10 >nul
+
+                echo --- Flask Log Preview ---
+                type flask_log.txt || echo (no log found)
+                echo --- End Preview ---
+                '''
+            }
+        }
+
+        stage('🌬️ Trigger Airflow DAG') {
+            steps {
+                bat '''
+                echo Triggering Airflow DAG...
+                curl -X POST http://localhost:8081/api/v1/dags/voyage_analytics_dag/dagRuns \
+                     -H "Content-Type: application/json" \
+                     -u admin:admin \
+                     -d "{\"conf\": {\"run_type\": \"jenkins\"}}"
+                '''
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo "❌ Pipeline failed. Showing Flask logs below (if any):"
+            bat '''
+            echo ========= FLASK LOG (ON FAILURE) =========
+            if exist flask_log.txt type flask_log.txt
+            echo ==========================================
+            '''
+        }
+        success {
+            echo "✅ Pipeline completed successfully!"
+        }
     }
 }
