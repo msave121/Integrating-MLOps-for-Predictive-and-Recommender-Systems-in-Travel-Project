@@ -13,9 +13,11 @@ pipeline {
                 bat '''
                 echo Cleaning workspace...
                 if exist flask_log.txt del /f /q flask_log.txt
-                for /F "tokens=5" %p in ('netstat -aon ^| findstr :%FLASK_PORT% ^| findstr LISTENING') do (
-                    echo Killing existing Flask process with PID %p
-                    taskkill /F /PID %p
+
+                echo Checking for any existing Flask processes on port %FLASK_PORT%...
+                for /f "tokens=5" %%p in ('netstat -aon ^| findstr :%FLASK_PORT% ^| findstr LISTENING') do (
+                    echo Killing old Flask process with PID %%p
+                    taskkill /F /PID %%p
                 )
                 '''
             }
@@ -41,9 +43,10 @@ pipeline {
             steps {
                 bat '''
                 echo Starting Flask app on port %FLASK_PORT%...
-                for /F "tokens=5" %p in ('netstat -aon ^| findstr :%FLASK_PORT% ^| findstr LISTENING') do (
-                    echo Killing old Flask process with PID %p
-                    taskkill /F /PID %p
+
+                for /f "tokens=5" %%p in ('netstat -aon ^| findstr :%FLASK_PORT% ^| findstr LISTENING') do (
+                    echo Killing old Flask process with PID %%p
+                    taskkill /F /PID %%p
                 )
 
                 echo Launching Flask app...
@@ -62,10 +65,10 @@ pipeline {
             steps {
                 bat '''
                 echo Triggering Airflow DAG...
-                curl -X POST http://localhost:8081/api/v1/dags/voyage_analytics_dag/dagRuns \
-                     -H "Content-Type: application/json" \
-                     -u admin:admin \
-                     -d "{\"conf\": {\"run_type\": \"jenkins\"}}"
+                curl -X POST http://localhost:8081/api/v1/dags/voyage_analytics_dag/dagRuns ^
+                     -H "Content-Type: application/json" ^
+                     -u admin:admin ^
+                     -d "{\\"conf\\": {\\"run_type\\": \\"jenkins\\"}}"
                 '''
             }
         }
