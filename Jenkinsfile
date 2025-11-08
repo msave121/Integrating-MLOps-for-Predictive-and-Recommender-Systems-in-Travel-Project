@@ -56,12 +56,23 @@ pipeline {
                 echo Starting Flask app on port %FLASK_PORT%...
 
                 start "" cmd /c "%PYTHON% src\\app.py > flask_log.txt 2>&1"
-                echo Waiting for Flask to start...
-                timeout /t 10 >nul
+                echo Waiting for Flask to start (25s)...
+                timeout /t 25 >nul
 
                 echo --- Flask Log Preview ---
                 type flask_log.txt || echo (no log found)
                 echo --- End Preview ---
+
+                echo Checking if Flask started successfully...
+                curl -s http://localhost:%FLASK_PORT%/ > nul
+                if %errorlevel% neq 0 (
+                    echo ❌ Flask API did not respond on port %FLASK_PORT%.
+                    echo ======= FLASK LOG DUMP =======
+                    type flask_log.txt
+                    echo ==========================================
+                    exit /b 1
+                )
+                echo ✅ Flask API is running on port %FLASK_PORT%.
                 '''
             }
         }
