@@ -49,8 +49,8 @@ pipeline {
         stage('🚀 Deploy Flask App') {
             steps {
                 echo 'Starting Flask app in background...'
-                
-                // Kill any old process on Flask port
+
+                // Kill old Flask process (if any)
                 bat """
                     for /F "tokens=5" %%p in ('netstat -aon ^| findstr :%FLASK_PORT% ^| findstr LISTENING') do (
                         echo Killing old Flask process with PID %%p
@@ -58,21 +58,24 @@ pipeline {
                     )
                 """
 
-                // Start Flask in background safely using PowerShell
+                // Start Flask app in background (detached)
                 powershell """
-                    Start-Process -NoNewWindow -FilePath ".venv\\Scripts\\python.exe" -ArgumentList "src/app.py"
+                    if (Test-Path flask_log.txt) { Remove-Item flask_log.txt }
+                    Start-Process -FilePath ".venv\\Scripts\\python.exe" -ArgumentList "src/app.py" -WindowStyle Hidden -RedirectStandardOutput "flask_log.txt" -RedirectStandardError "flask_log.txt"
                     Start-Sleep -Seconds 10
                 """
 
-                // Verify Flask is running
-                bat "curl -s http://127.0.0.1:%FLASK_PORT%"
-                echo "✅ Flask app started successfully at http://127.0.0.1:%FLASK_PORT%"
+                // Verify Flask startup
+                bat """
+                    curl -s http://127.0.0.1:%FLASK_PORT%
+                """
+                echo "✅ Flask app started successfully on port %FLASK_PORT%"
             }
         }
 
         stage('🌬️ Trigger Airflow DAG') {
             steps {
-                echo 'Triggering Airflow DAG reload_model_dag...'
+                echo 'Triggering Airflow DAG...'
                 powershell """
                     $pair = "%AIRFLOW_USER%:%AIRFLOW_PASS%"
                     $encoded = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($pair))
@@ -92,7 +95,7 @@ pipeline {
             echo "🎉 Pipeline completed successfully!"
         }
         failure {
-            echo "❌ Pipeline failed. Check logs for details."
+            echo "❌ Pipeline failed. Check logs below (flask_log.txt if any):"
             bat """
                 echo ========= FLASK LOG (ON FAILURE) =========
                 if exist flask_log.txt type flask_log.txt
