@@ -15,10 +15,21 @@ pipeline {
                 if exist flask_log.txt del /f /q flask_log.txt
 
                 echo Checking for any existing Flask processes on port %FLASK_PORT%...
+                set "FOUND_PROCESS="
                 for /f "tokens=5" %%p in ('netstat -aon ^| findstr :%FLASK_PORT% ^| findstr LISTENING') do (
                     echo Killing old Flask process with PID %%p
                     taskkill /F /PID %%p
+                    set FOUND_PROCESS=1
                 )
+
+                if not defined FOUND_PROCESS (
+                    echo ✅ No existing Flask process found on port %FLASK_PORT%.
+                ) else (
+                    echo 🔁 Existing Flask process killed successfully.
+                )
+
+                rem Prevent pipeline from failing if no process found
+                exit /b 0
                 '''
             }
         }
@@ -44,12 +55,6 @@ pipeline {
                 bat '''
                 echo Starting Flask app on port %FLASK_PORT%...
 
-                for /f "tokens=5" %%p in ('netstat -aon ^| findstr :%FLASK_PORT% ^| findstr LISTENING') do (
-                    echo Killing old Flask process with PID %%p
-                    taskkill /F /PID %%p
-                )
-
-                echo Launching Flask app...
                 start "" cmd /c "%PYTHON% src\\app.py > flask_log.txt 2>&1"
                 echo Waiting for Flask to start...
                 timeout /t 10 >nul
