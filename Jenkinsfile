@@ -4,7 +4,7 @@ pipeline {
     environment {
         VENV_DIR  = ".venv"
         PYTHON    = "${VENV_DIR}\\Scripts\\python.exe"
-        ACTIVATE  = "${VENV_DIR}\\Scripts\\activate"   // fixed: no leading "call"
+        ACTIVATE  = "${VENV_DIR}\\Scripts\\activate"
         MODEL_PATH = "model\\voyage_model\\1\\model.pkl"
         APP_PATH   = "src\\app.py"
     }
@@ -59,16 +59,12 @@ pipeline {
                     if exist "%APP_PATH%" (
                         echo [INFO] Starting Flask app in background...
 
-                        REM Best-effort kill any prior process running app.py (optional safety)
                         for /f "tokens=2 delims==," %%a in ('wmic process where "CommandLine like '%%src\\\\app.py%%'" get ProcessId /value ^| find "ProcessId="') do taskkill /PID %%a /F >nul 2>&1
 
-                        REM Start the app with the venv's python
                         start "FLASK-APP" cmd /c "%PYTHON% %APP_PATH% > flask_log.txt 2>&1"
 
-                        REM Wait ~5 seconds (Windows-safe sleep)
                         ping -n 6 127.0.0.1 >nul
 
-                        REM Health check without curl (PowerShell)
                         powershell -NoProfile -Command "try{ iwr -UseBasicParsing http://127.0.0.1:5050 -TimeoutSec 10 | Out-Null; exit 0 } catch { exit 1 }"
                         if errorlevel 1 (
                             echo [ERROR] Flask did not start, recent log:
@@ -88,7 +84,7 @@ pipeline {
     post {
         always {
             echo 'Cleaning up any background Flask process (if running)...'
-            REM Kill the console window started with title FLASK-APP (best-effort)
+            // Kill the console window started with title FLASK-APP (best-effort)
             bat 'taskkill /FI "WINDOWTITLE eq FLASK-APP" /F >nul 2>&1'
         }
         success {
