@@ -7,12 +7,15 @@ pipeline {
         NETSTAT = "C:\\Windows\\System32\\netstat.exe"
         FINDSTR = "C:\\Windows\\System32\\findstr.exe"
         POWERSHELL = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+        TIMEOUT = "C:\\Windows\\System32\\timeout.exe"
+        WORKSPACE_DIR = "C:\\ProgramData\\Jenkins\\.jenkins\\workspace\\voyage-analytics-pipeline"
+        FLASK_LOG = "C:\\ProgramData\\Jenkins\\.jenkins\\workspace\\voyage-analytics-pipeline\\flask_log.txt"
     }
 
     stages {
         stage('📦 Setup Environment') {
             steps {
-                echo "Setting up virtual environment and installing dependencies..."
+                echo "Setting up Python virtual environment..."
                 bat """
                 if not exist .venv (
                     python -m venv .venv
@@ -26,7 +29,7 @@ pipeline {
 
         stage('🧠 Train Model') {
             steps {
-                echo "Training ML model..."
+                echo "Training regression model..."
                 bat """
                 call .venv\\Scripts\\activate
                 %PYTHON% src\\train_regression.py --users data\\users.csv --flights data\\flights.csv --hotels data\\hotels.csv
@@ -39,25 +42,28 @@ pipeline {
                 echo "=== Deploying Flask App on port %FLASK_PORT% ==="
 
                 bat """
-                rem --- Kill any process on port 5055 (ignore errors) ---
+                rem --- Kill existing process on port 5055 ---
                 "%NETSTAT%" -aon | "%FINDSTR%" :%FLASK_PORT% > temp_netstat.txt 2>nul
                 for /F "tokens=5" %%p in (temp_netstat.txt) do taskkill /F /PID %%p >nul 2>&1
                 del temp_netstat.txt >nul 2>&1
 
                 rem --- Start Flask in background ---
                 echo Starting Flask app...
-                start "" "%POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -Command ^
-                    "cd '%CD%'; & '%PYTHON%' src\\app.py *> flask_log.txt 2>&1 &"
+                del "%FLASK_LOG%" >nul 2>&1
 
-                echo Waiting for Flask to start...
-                timeout /t 25 /nobreak >nul
+                "%POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -Command ^
+                    "cd '%WORKSPACE_DIR%'; Start-Process '%PYTHON%' 'src\\app.py' -NoNewWindow -RedirectStandardOutput '%FLASK_LOG%' -RedirectStandardError '%FLASK_LOG%'"
+
+                rem --- Wait for Flask to start ---
+                echo Waiting up to 25 seconds for Flask to start...
+                "%TIMEOUT%" /t 25 /nobreak >nul
 
                 rem --- Health check ---
                 curl -s http://localhost:%FLASK_PORT%/ >nul 2>&1
                 if errorlevel 1 (
                     echo ❌ Flask failed health check!
                     echo ======= FLASK LOG =======
-                    type flask_log.txt
+                    if exist "%FLASK_LOG%" type "%FLASK_LOG%"
                     echo ==========================
                     exit /b 1
                 ) else (
@@ -76,7 +82,7 @@ pipeline {
                 bat """
                 curl -X POST http://localhost:8080/api/v1/dags/voyage_analytics_dag/dagRuns ^
                      -H "Content-Type: application/json" ^
-                     -u airflow:airflow ^
+                     -u admin:admin ^
                      -d "{\\"conf\\": {\\"triggered_by\\": \\"Jenkins Pipeline\\"}}"
                 """
             }
@@ -102,7 +108,7 @@ pipeline {
             echo "❌ Pipeline failed. Showing Flask logs below (if any):"
             bat """
             echo ========= FLASK LOG (ON FAILURE) =========
-            if exist flask_log.txt type flask_log.txt
+            if exist "%FLASK_LOG%" type "%FLASK_LOG%"
             echo ==========================================
             """
         }
