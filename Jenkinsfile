@@ -2,94 +2,81 @@ pipeline {
     agent any
 
     environment {
-        PYTHON = ".venv\\Scripts\\python.exe"
-        FLASK_PORT = "5055"
+        VENV_DIR = ".venv"
+        PYTHON = "${VENV_DIR}\\Scripts\\python.exe"
+        ACTIVATE = "call ${VENV_DIR}\\Scripts\\activate"
+        MODEL_PATH = "model\\voyage_model\\1\\model.pkl"
+        APP_PATH = "src\\app.py"
     }
 
     stages {
 
-        stage('🧹 Cleanup Workspace') {
+        stage('⚙️ Setup Environment') {
             steps {
-                bat '''
-                echo Cleaning workspace...
-                if exist flask_log.txt del /f /q flask_log.txt
-
-                echo Checking for any existing Flask processes on port %FLASK_PORT%...
-                set "FOUND_PROCESS="
-                for /f "tokens=5" %%p in ('netstat -aon ^| findstr :%FLASK_PORT% ^| findstr LISTENING') do (
-                    echo Killing old Flask process with PID %%p
-                    taskkill /F /PID %%p
-                    set FOUND_PROCESS=1
-                )
-
-                if not defined FOUND_PROCESS (
-                    echo ✅ No existing Flask process found on port %FLASK_PORT%.
-                ) else (
-                    echo 🔁 Existing Flask process killed successfully.
-                )
-
-                rem Prevent pipeline from failing if no process found
-                exit /b 0
-                '''
+                echo "Setting up Python environment..."
+                bat """
+                    if not exist %VENV_DIR% (
+                        python -m venv %VENV_DIR%
+                    )
+                    call %VENV_DIR%\\Scripts\\activate
+                    pip install --upgrade pip
+                    pip install -r requirements.txt
+                """
             }
         }
 
-        stage('📦 Setup Environment') {
+        stage('🏗️ Build Model') {
             steps {
-                bat '''
-                echo Activating virtual environment...
-                if not exist .venv (
-                    echo Creating new virtual environment...
-                    python -m venv .venv
-                )
-                call .venv\\Scripts\\activate
-                echo Installing dependencies...
-                pip install --upgrade pip setuptools wheel
-                pip install -r requirements.txt
-                '''
+                echo "Training model..."
+                bat """
+                    call %ACTIVATE%
+                    %PYTHON% src/train_regression.py --users data/users.csv --flights data/flights.csv --hotels data/hotels.csv
+                """
             }
         }
 
-        stage('🚀 Deploy Flask App') {
+        stage('🧠 Test Model') {
             steps {
-                bat '''
-                echo Starting Flask app on port %FLASK_PORT%...
-
-                start "" cmd /c "%PYTHON% src\\app.py > flask_log.txt 2>&1"
-                echo Waiting for Flask to start...
-                timeout /t 10 >nul
-
-                echo --- Flask Log Preview ---
-                type flask_log.txt || echo (no log found)
-                echo --- End Preview ---
-                '''
+                echo "Testing model..."
+                bat """
+                    call %ACTIVATE%
+                    if exist "%MODEL_PATH%" (
+                        echo [INFO] Model found at %MODEL_PATH%
+                        %PYTHON% src/test_model.py
+                    ) else (
+                        echo [ERROR] Model not found at %MODEL_PATH%
+                        exit /b 1
+                    )
+                """
             }
         }
 
-        stage('🌬️ Trigger Airflow DAG') {
+        stage('🚀 Deploy') {
             steps {
-                bat '''
-                echo Triggering Airflow DAG...
-                curl -X POST http://localhost:8081/api/v1/dags/voyage_analytics_dag/dagRuns ^
-                     -H "Content-Type: application/json" ^
-                     -u admin:admin ^
-                     -d "{\\"conf\\": {\\"run_type\\": \\"jenkins\\"}}"
-                '''
+                echo "Deploying Flask app..."
+                bat """
+                    call %ACTIVATE%
+                    if exist "%APP_PATH%" (
+                        echo [INFO] Starting Flask app in background...
+                        start cmd /c "python %APP_PATH% > flask_log.txt 2>&1"
+                        timeout /t 5 >nul
+                        curl http://127.0.0.1:5050 || (echo [ERROR] Flask did not start & exit /b 1)
+                    ) else (
+                        echo [ERROR] app.py not found at %APP_PATH%
+                        exit /b 1
+                    )
+                """
+                echo "✅ Flask app started successfully at http://127.0.0.1:5050"
             }
         }
     }
 
     post {
-        failure {
-            echo "❌ Pipeline failed. Showing Flask logs below (if any):"
-            bat '''
-            echo ========= FLASK LOG (ON FAILURE) =========
-            if exist flask_log.txt type flask_log.txt
-            echo ==========================================
-            '''
-        }
         success {
-            echo "✅ Pipeline completed successfully!"
+            echo '✅ Pipeline completed successfully!'
+        }
+        failure {
+            echo '❌ Pipeline failed. Check logs for details.'
         }
     }
 }
