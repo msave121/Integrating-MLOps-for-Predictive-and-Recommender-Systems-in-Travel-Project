@@ -7,7 +7,7 @@ from pathlib import Path
 import json
 import sys
 import threading
-import time
+import argparse
 
 # --- Logging setup ---
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
@@ -18,7 +18,6 @@ app = Flask(__name__)
 MODEL_PATH = Path("model/voyage_model/1/model.pkl")
 COLUMNS_PATH = Path("src/columns.json")
 
-# --- Model Loading with Timeout ---
 logger.info("[INFO] Starting Flask app... importing dependencies, please wait...")
 logger.info("[INFO] Checking model path...")
 
@@ -63,37 +62,42 @@ else:
     logger.warning("⚠️ No columns.json found — predictions may be incomplete.")
 
 # --- Routes ---
-@app.route("/", methods=["GET"])
-def home():
-    return jsonify({"status": "Voyage Analytics API is running", "port": 5055})
+@app.get("/health")
+def health():
+    return jsonify(status="ok", port=app.config.get("APP_PORT", None))
 
-@app.route("/predict", methods=["POST"])
+@app.get("/")
+def home():
+    return jsonify({"status": "Voyage Analytics API is running", "port": app.config.get("APP_PORT", None)})
+
+@app.post("/predict")
 def predict():
     try:
         data = request.get_json(force=True)
         logger.info(f"Received data keys: {list(data.keys())}")
 
-        # Convert date strings
+        # Convert date strings -> year/month/day
         for prefix in ["date_flight", "date_hotel"]:
-            if prefix in data:
+            if prefix in data and data[prefix]:
                 dt = pd.to_datetime(data[prefix])
-                data[f"{prefix}_year"] = dt.year
-                data[f"{prefix}_month"] = dt.month
-                data[f"{prefix}_day"] = dt.day
+                data[f"{prefix}_year"] = int(dt.year)
+                data[f"{prefix}_month"] = int(dt.month)
+                data[f"{prefix}_day"] = int(dt.day)
                 del data[prefix]
 
         # Convert to DataFrame
         df = pd.DataFrame([data])
 
-        # Fill missing columns
+        # Ensure expected columns exist and order them
         for col in required_cols:
             if col not in df.columns:
                 df[col] = None
-        df = df[required_cols]
+        if required_cols:
+            df = df[required_cols]
 
         # Predict
         preds = model.predict(df)
-        preds = [max(0, p) for p in preds]  # prevent negative predictions
+        preds = [max(0, float(p)) for p in preds]  # prevent negatives, ensure JSON-serializable
 
         return jsonify({"prediction": preds})
 
@@ -103,5 +107,11 @@ def predict():
 
 
 if __name__ == "__main__":
-    logger.info("🚀 Starting Flask server at http://localhost:5055/ ...")
-    app.run(host="0.0.0.0", port=5055, debug=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=5055)
+    args = parser.parse_args()
+
+    app.config["APP_PORT"] = args.port
+    logger.info(f"🚀 Starting Flask server at http://{args.host}:{args.port}/ ...")
+    app.run(host=args.host, port=args.port, debug=False)
