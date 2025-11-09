@@ -2,101 +2,83 @@ pipeline {
     agent any
 
     environment {
-        PYTHON_HOME = "C:\\Users\\HP\\AppData\\Local\\Programs\\Python\\Python312"
-        VENV_DIR = ".venv"
+        PYTHON = ".venv\\Scripts\\python.exe"
         FLASK_PORT = "5055"
-        FLASK_LOG = "flask_log.txt"
-        AIRFLOW_TRIGGER = "http://localhost:8081/api/v1/dags/voyage_analytics_dag/dagRuns"
-        AIRFLOW_USER = "admin"
-        AIRFLOW_PASS = "admin"
-        POWERSHELL_PATH = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
-        NETSTAT_PATH = "C:\\Windows\\System32\\netstat.exe"
+        NETSTAT = "C:\\Windows\\System32\\netstat.exe"
+        FINDSTR = "C:\\Windows\\System32\\findstr.exe"
+        POWERSHELL = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
     }
 
     stages {
-        stage('🧹 Clean Workspace') {
+        stage('📦 Setup Environment') {
             steps {
-                deleteDir()
-                echo "✅ Cleaned workspace."
-            }
-        }
-
-        stage('📥 Checkout Code') {
-            steps {
-                git branch: 'main', url: 'https://github.com/msave121/msave121.git'
-            }
-        }
-
-        stage('🐍 Setup Python Environment') {
-            steps {
-                bat '''
-                echo === Setting up Python Virtual Environment ===
-                set PATH=%PYTHON_HOME%;%PYTHON_HOME%\\Scripts;%PATH%
-                "%PYTHON_HOME%\\python.exe" -m venv %VENV_DIR%
-                call %VENV_DIR%\\Scripts\\activate
-                python --version
+                echo "Setting up virtual environment and installing dependencies..."
+                bat """
+                if not exist .venv (
+                    python -m venv .venv
+                )
+                call .venv\\Scripts\\activate
                 pip install --upgrade pip
                 pip install -r requirements.txt
-                '''
+                """
             }
         }
 
-        stage('🧪 Test Model') {
+        stage('🧠 Train Model') {
             steps {
-                bat '''
-                echo === Testing Regression Model ===
-                call %VENV_DIR%\\Scripts\\activate
-                python src\\test_model.py
-                if %errorlevel% neq 0 (
-                    echo ❌ Model testing failed.
-                    exit /b 1
-                )
-                echo ✅ Model tested successfully.
-                '''
+                echo "Training ML model..."
+                bat """
+                call .venv\\Scripts\\activate
+                %PYTHON% src\\train_regression.py --users data\\users.csv --flights data\\flights.csv --hotels data\\hotels.csv
+                """
             }
         }
 
-        stage('🚀 Deploy Flask App') {
+        stage('🚀 Deploy Flask API') {
             steps {
-                bat '''
-                echo === Deploying Flask App on port %FLASK_PORT% ===
+                echo "=== Deploying Flask App on port %FLASK_PORT% ==="
 
-                rem Kill any Flask process already using the port
-                "%NETSTAT_PATH%" -aon | findstr :%FLASK_PORT% > temp_netstat.txt
-                for /F "tokens=5" %%a in (temp_netstat.txt) do taskkill /PID %%a /F >nul 2>&1
-                del temp_netstat.txt 2>nul
+                bat """
+                rem --- Kill any process on port 5055 (ignore errors) ---
+                "%NETSTAT%" -aon | "%FINDSTR%" :%FLASK_PORT% > temp_netstat.txt 2>nul
+                for /F "tokens=5" %%p in (temp_netstat.txt) do taskkill /F /PID %%p >nul 2>&1
+                del temp_netstat.txt >nul 2>&1
 
-                rem Start Flask app (background)
+                rem --- Start Flask in background ---
                 echo Starting Flask app...
-                call %VENV_DIR%\\Scripts\\activate
-                start "" cmd /c python src\\app.py > %FLASK_LOG% 2>&1
+                start "" "%POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -Command ^
+                    "cd '%CD%'; & '%PYTHON%' src\\app.py *> flask_log.txt 2>&1 &"
 
-                rem Wait and verify Flask health endpoint
-                echo Waiting for Flask to start (10s)...
-                "%POWERSHELL_PATH%" -Command "Start-Sleep -Seconds 10"
+                echo Waiting for Flask to start...
+                timeout /t 25 /nobreak >nul
 
-                "%POWERSHELL_PATH%" -Command "$r = Invoke-WebRequest -Uri http://127.0.0.1:%FLASK_PORT%/health -UseBasicParsing; if ($r.StatusCode -ne 200) { exit 1 }"
-                if %errorlevel% neq 0 (
+                rem --- Health check ---
+                curl -s http://localhost:%FLASK_PORT%/ >nul 2>&1
+                if errorlevel 1 (
                     echo ❌ Flask failed health check!
-                    type %FLASK_LOG%
+                    echo ======= FLASK LOG =======
+                    type flask_log.txt
+                    echo ==========================
                     exit /b 1
+                ) else (
+                    echo ✅ Flask is running successfully on port %FLASK_PORT%!
                 )
-                echo ✅ Flask app running successfully.
-                '''
+                """
             }
         }
 
         stage('🌬️ Trigger Airflow DAG') {
+            when {
+                expression { currentBuild.currentResult == 'SUCCESS' }
+            }
             steps {
-                bat '''
-                echo === Triggering Airflow DAG ===
-                "%POWERSHELL_PATH%" -Command "Invoke-RestMethod -Method POST -Uri '%AIRFLOW_TRIGGER%' -Headers @{Authorization=('Basic ' + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes('%AIRFLOW_USER%:%AIRFLOW_PASS%')))} -Body '{}' "
-                if %errorlevel% neq 0 (
-                    echo ❌ Failed to trigger Airflow DAG.
-                    exit /b 1
-                )
-                echo ✅ Airflow DAG triggered successfully.
-                '''
+                echo "Triggering Airflow DAG..."
+                bat """
+                curl -X POST http://localhost:8080/api/v1/dags/voyage_analytics_dag/dagRuns ^
+                     -H "Content-Type: application/json" ^
+                     -u airflow:airflow ^
+                     -d "{\\"conf\\": {\\"triggered_by\\": \\"Jenkins Pipeline\\"}}"
+                """
             }
         }
     }
@@ -104,23 +86,25 @@ pipeline {
     post {
         always {
             echo "🧹 Cleaning up Flask process after pipeline..."
-            bat '''
-            "%NETSTAT_PATH%" -aon | findstr :%FLASK_PORT% > temp_netstat.txt
+            bat """
+            "%NETSTAT%" -aon | "%FINDSTR%" :%FLASK_PORT% > temp_netstat.txt 2>nul
             for /F "tokens=5" %%p in (temp_netstat.txt) do (
                 echo Stopping Flask process %%p
                 taskkill /F /PID %%p >nul 2>&1
             )
-            del temp_netstat.txt 2>nul
-            '''
+            del temp_netstat.txt >nul 2>&1
+            """
+
+            echo "✅ Cleanup complete."
         }
 
         failure {
             echo "❌ Pipeline failed. Showing Flask logs below (if any):"
-            bat '''
+            bat """
             echo ========= FLASK LOG (ON FAILURE) =========
-            if exist %FLASK_LOG% type %FLASK_LOG%
+            if exist flask_log.txt type flask_log.txt
             echo ==========================================
-            '''
+            """
         }
     }
 }
