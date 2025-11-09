@@ -2,77 +2,80 @@ pipeline {
     agent any
 
     environment {
-        FLASK_PORT = "5055"
+        VENV = '.venv'
+        PYTHON = "${env.WORKSPACE}\\.venv\\Scripts\\python.exe"
     }
 
     stages {
 
-        stage('🧹 Clean Workspace') {
+        stage('Setup Environment') {
             steps {
-                echo "Cleaning up workspace..."
-                bat 'del /Q flask_log.txt 2>nul || echo (no existing log)'
-            }
-        }
-
-        stage('🐍 Setup Python Environment') {
-            steps {
-                echo "Setting up Python virtual environment..."
                 bat '''
-                if not exist .venv (
+                echo === Setting up virtual environment ===
+
+                if not exist %VENV% (
                     echo Creating virtual environment...
-                    python -m venv .venv
+                    python -m venv %VENV%
                 )
-                .venv\\Scripts\\python.exe -m pip install --upgrade pip
-                .venv\\Scripts\\python.exe -m pip install -r requirements.txt
+
+                call %VENV%\\Scripts\\activate
+                python -m pip install --upgrade pip
+                pip install -r requirements.txt
                 '''
             }
         }
 
-        stage('📊 Train Model') {
+        stage('Train Model') {
             steps {
-                echo "=== Training Model ==="
                 bat '''
-                .venv\\Scripts\\python.exe src\\train_regression.py --users data\\users.csv --flights data\\flights.csv --hotels data\\hotels.csv
+                echo === Training Model ===
+                call %VENV%\\Scripts\\activate
+                python src\\train_regression.py --users data\\users.csv --flights data\\flights.csv --hotels data\\hotels.csv
                 '''
             }
         }
 
-        stage('🧪 Test Model') {
+        stage('Test Model') {
             steps {
-                echo "=== Testing Model ==="
                 bat '''
-                .venv\\Scripts\\python.exe src\\test_model.py
+                echo === Testing Model ===
+                call %VENV%\\Scripts\\activate
+                python src\\test_model.py
                 '''
             }
         }
 
-        stage('🚀 Run Flask App') {
+        stage('Deploy Flask App') {
             steps {
-                echo "=== Deploying Flask App on port ${FLASK_PORT} ==="
                 bat '''
-                rem --- Kill any process using the port (ignore errors) ---
-                "C:\\Windows\\System32\\netstat.exe" -aon | "C:\\Windows\\System32\\findstr.exe" :%FLASK_PORT% > temp_netstat.txt 2>nul
+                echo === Starting Flask App ===
+                
+                rem --- Kill any process using the port ---
+                "C:\\Windows\\System32\\netstat.exe" -aon | "C:\\Windows\\System32\\findstr.exe" :5055 > temp_netstat.txt 2>nul
                 for /F "tokens=5" %%p in (temp_netstat.txt) do taskkill /F /PID %%p >nul 2>&1
                 del temp_netstat.txt 2>nul
 
-                rem --- Start Flask app in background ---
-                echo Starting Flask app...
+                rem --- Start Flask in background ---
                 del flask_log.txt 2>nul
-                start "" cmd /c ".venv\\Scripts\\python.exe src\\app.py > flask_log.txt 2>&1"
+                echo Starting Flask app in background...
+                start "" cmd /c "call .venv\\Scripts\\activate && python src\\app.py > flask_log.txt 2>&1"
 
+                rem --- Wait for Flask to start ---
                 echo Waiting for Flask to start...
-                timeout /t 20 /nobreak >nul
+                powershell -Command "Start-Sleep -Seconds 20"
 
+                rem --- Check health endpoint ---
                 echo Checking Flask health...
-                curl -s http://localhost:%FLASK_PORT% >nul 2>&1
+                curl -s http://localhost:5055 >nul 2>&1
+
                 if errorlevel 1 (
-                    echo ❌ Flask failed health check!
-                    echo ======= FLASK LOG =======
-                    type flask_log.txt
-                    echo ==========================
-                    exit /b 1
+                    echo ❌ Flask failed health check!  
+                    echo ======= FLASK LOG =======  
+                    if exist flask_log.txt type flask_log.txt  
+                    echo ==========================  
+                    exit /b 1 
                 ) else (
-                    echo ✅ Flask is running successfully on port %FLASK_PORT%!
+                    echo ✅ Flask is running successfully on port 5055!
                 )
                 '''
             }
@@ -81,9 +84,9 @@ pipeline {
 
     post {
         always {
-            echo "🧹 Cleaning up Flask process..."
+            echo '🧹 Cleaning up Flask process...'
             bat '''
-            "C:\\Windows\\System32\\netstat.exe" -aon | "C:\\Windows\\System32\\findstr.exe" :%FLASK_PORT% > temp_netstat.txt 2>nul
+            "C:\\Windows\\System32\\netstat.exe" -aon | "C:\\Windows\\System32\\findstr.exe" :5055 > temp_netstat.txt 2>nul
             for /F "tokens=5" %%p in (temp_netstat.txt) do taskkill /F /PID %%p >nul 2>&1
             del temp_netstat.txt 2>nul
             echo ✅ Cleanup complete.
@@ -91,12 +94,16 @@ pipeline {
         }
 
         failure {
-            echo "❌ Pipeline failed. Showing Flask logs below (if any):"
+            echo '❌ Pipeline failed. Showing Flask logs below (if any):'
             bat '''
             echo ========= FLASK LOG (ON FAILURE) =========
             if exist flask_log.txt type flask_log.txt
             echo ==========================================
             '''
+        }
+
+        success {
+            echo '✅ Pipeline completed successfully!'
         }
     }
 }
