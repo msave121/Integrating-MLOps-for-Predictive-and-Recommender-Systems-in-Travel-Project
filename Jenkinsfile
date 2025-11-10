@@ -45,8 +45,9 @@ pipeline {
                 echo Starting Flask app in background...
                 start "" cmd /c "call .venv\\Scripts\\activate && python src\\app.py > flask_log.txt 2>&1"
 
-                rem --- Wait 15 seconds for Flask to boot ---
-                powershell -Command "Start-Sleep -Seconds 15"
+                rem --- Wait for Flask to boot (15 seconds) ---
+                echo Waiting 15 seconds for Flask to start...
+                timeout /T 15 /NOBREAK >nul
 
                 rem --- Health check ---
                 echo Checking Flask health...
