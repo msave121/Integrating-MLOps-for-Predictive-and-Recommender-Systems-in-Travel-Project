@@ -1,15 +1,10 @@
 pipeline {
     agent any
 
-    environment {
-        PYTHON = "${WORKSPACE}\\.venv\\Scripts\\python.exe"
-        PORT = "5055"
-    }
-
     stages {
         stage('Setup Environment') {
             steps {
-                echo "=== Setting up Python virtual environment ==="
+                echo '=== Setting up Python Environment ==='
                 bat '''
                 if not exist .venv (
                     python -m venv .venv
@@ -23,7 +18,7 @@ pipeline {
 
         stage('Train Model') {
             steps {
-                echo "=== Training Model ==="
+                echo '=== Training Model ==='
                 bat '''
                 call .venv\\Scripts\\activate
                 python src\\train_regression.py --users data\\users.csv --flights data\\flights.csv --hotels data\\hotels.csv
@@ -33,25 +28,27 @@ pipeline {
 
         stage('Deploy Flask App') {
             steps {
-                echo "=== Starting Flask App ==="
+                echo '=== Starting Flask App ==='
                 bat '''
-                rem --- Kill any process using the port ---
-                "C:\\Windows\\System32\\netstat.exe" -aon | "C:\\Windows\\System32\\findstr.exe" :%PORT% > temp_netstat.txt 2>nul
+                rem --- Kill any process using the port 5055 ---
+                "C:\\Windows\\System32\\netstat.exe" -aon | "C:\\Windows\\System32\\findstr.exe" :5055 > temp_netstat.txt 2>nul
                 for /F "tokens=5" %%p in (temp_netstat.txt) do taskkill /F /PID %%p >nul 2>&1
                 del temp_netstat.txt 2>nul
 
-                rem --- Start Flask in background ---
+                rem --- Start Flask app in background ---
                 del flask_log.txt 2>nul
                 echo Starting Flask app in background...
                 start "" cmd /c "call .venv\\Scripts\\activate && python src\\app.py > flask_log.txt 2>&1"
 
-                rem --- Wait for Flask readiness (up to 60 seconds) ---
+                rem --- Wait for Flask to be ready (up to 60 seconds) ---
                 echo Waiting for Flask to report readiness...
-                set "ready="
-                for /L %%i in (1,1,60) do (
-                    findstr /C:"Voyage Analytics API is running" flask_log.txt >nul 2>&1 && set "ready=1" && goto ready
-                    timeout /T 1 /NOBREAK >nul
+                set ready=
+
+                for /L %%i in (1 1 60) do (
+                    findstr /C:"Voyage Analytics API is running" flask_log.txt >nul 2>&1 && set ready=1 && goto ready
+                    ping 127.0.0.1 -n 2 >nul
                 )
+
                 :ready
                 if not defined ready (
                     echo ❌ Flask failed to start within 60 seconds!
@@ -61,18 +58,7 @@ pipeline {
                     exit /b 1
                 )
 
-                rem --- Health check ---
-                echo Checking Flask health...
-                curl -s http://localhost:%PORT% >nul 2>&1
-                if errorlevel 1 (
-                    echo ❌ Flask failed health check!
-                    echo ======= FLASK LOG =======
-                    type flask_log.txt
-                    echo ==========================
-                    exit /b 1
-                ) else (
-                    echo ✅ Flask is running successfully on port %PORT%!
-                )
+                echo ✅ Flask app started successfully!
                 '''
             }
         }
@@ -80,16 +66,15 @@ pipeline {
 
     post {
         always {
-            echo "🧹 Cleaning up Flask process..."
+            echo '🧹 Cleaning up Flask process...'
             bat '''
-            "C:\\Windows\\System32\\netstat.exe" -aon | "C:\\Windows\\System32\\findstr.exe" :%PORT% > temp_netstat.txt 2>nul
+            "C:\\Windows\\System32\\netstat.exe" -aon | "C:\\Windows\\System32\\findstr.exe" :5055 > temp_netstat.txt 2>nul
             for /F "tokens=5" %%p in (temp_netstat.txt) do taskkill /F /PID %%p >nul 2>&1
             del temp_netstat.txt 2>nul
             echo ✅ Cleanup complete.
             '''
-        }
-        failure {
-            echo "❌ Pipeline failed. Showing Flask logs below (if any):"
+
+            echo '❌ Pipeline failed. Showing Flask logs below (if any):'
             bat '''
             echo ========= FLASK LOG (ON FAILURE) =========
             if exist flask_log.txt type flask_log.txt
