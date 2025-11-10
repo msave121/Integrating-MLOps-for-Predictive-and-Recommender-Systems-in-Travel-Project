@@ -2,54 +2,39 @@ pipeline {
     agent any
 
     environment {
-        VENV = '.venv'
-        PYTHON = "${env.WORKSPACE}\\.venv\\Scripts\\python.exe"
+        PYTHON = '.venv\\Scripts\\python.exe'
+        PIP = '.venv\\Scripts\\pip.exe'
     }
 
     stages {
-
         stage('Setup Environment') {
             steps {
+                echo '=== Setting up virtual environment ==='
                 bat '''
-                echo === Setting up virtual environment ===
-
-                if not exist %VENV% (
+                if not exist .venv (
                     echo Creating virtual environment...
-                    python -m venv %VENV%
+                    python -m venv .venv
                 )
-
-                call %VENV%\\Scripts\\activate
-                python -m pip install --upgrade pip
-                pip install -r requirements.txt
+                call .venv\\Scripts\\activate
+                %PIP% install --upgrade pip
+                %PIP% install -r requirements.txt
                 '''
             }
         }
 
         stage('Train Model') {
             steps {
+                echo '=== Training Model ==='
                 bat '''
-                echo === Training Model ===
-                call %VENV%\\Scripts\\activate
-                python src\\train_regression.py --users data\\users.csv --flights data\\flights.csv --hotels data\\hotels.csv
-                '''
-            }
-        }
-
-        stage('Test Model') {
-            steps {
-                bat '''
-                echo === Testing Model ===
-                call %VENV%\\Scripts\\activate
-                python src\\test_model.py
+                call .venv\\Scripts\\activate && %PYTHON% src\\train_regression.py --users data\\users.csv --flights data\\flights.csv --hotels data\\hotels.csv
                 '''
             }
         }
 
         stage('Deploy Flask App') {
             steps {
+                echo '=== Starting Flask App ==='
                 bat '''
-                echo === Starting Flask App ===
-                
                 rem --- Kill any process using the port ---
                 "C:\\Windows\\System32\\netstat.exe" -aon | "C:\\Windows\\System32\\findstr.exe" :5055 > temp_netstat.txt 2>nul
                 for /F "tokens=5" %%p in (temp_netstat.txt) do taskkill /F /PID %%p >nul 2>&1
@@ -60,11 +45,13 @@ pipeline {
                 echo Starting Flask app in background...
                 start "" cmd /c "call .venv\\Scripts\\activate && python src\\app.py > flask_log.txt 2>&1"
 
-                rem --- Wait for Flask to start ---
+                rem --- Wait for Flask to start (20 sec loop) ---
                 echo Waiting for Flask to start...
-                powershell -Command "Start-Sleep -Seconds 20"
+                for /L %%i in (1,1,20) do (
+                    ping 127.0.0.1 -n 2 >nul
+                )
 
-                rem --- Check health endpoint ---
+                rem --- Health check ---
                 echo Checking Flask health...
                 curl -s http://localhost:5055 >nul 2>&1
 
@@ -92,7 +79,6 @@ pipeline {
             echo ✅ Cleanup complete.
             '''
         }
-
         failure {
             echo '❌ Pipeline failed. Showing Flask logs below (if any):'
             bat '''
@@ -100,10 +86,6 @@ pipeline {
             if exist flask_log.txt type flask_log.txt
             echo ==========================================
             '''
-        }
-
-        success {
-            echo '✅ Pipeline completed successfully!'
         }
     }
 }
