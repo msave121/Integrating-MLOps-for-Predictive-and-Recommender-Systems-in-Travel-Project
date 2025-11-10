@@ -45,9 +45,21 @@ pipeline {
                 echo Starting Flask app in background...
                 start "" cmd /c "call .venv\\Scripts\\activate && python src\\app.py > flask_log.txt 2>&1"
 
-                rem --- Wait for Flask to boot (15 seconds) ---
-                echo Waiting 15 seconds for Flask to start...
-                timeout /T 15 /NOBREAK >nul
+                rem --- Wait for Flask readiness (up to 60 seconds) ---
+                echo Waiting for Flask to report readiness...
+                set "ready="
+                for /L %%i in (1,1,60) do (
+                    findstr /C:"Voyage Analytics API is running" flask_log.txt >nul 2>&1 && set "ready=1" && goto ready
+                    timeout /T 1 /NOBREAK >nul
+                )
+                :ready
+                if not defined ready (
+                    echo ❌ Flask failed to start within 60 seconds!
+                    echo ======= FLASK LOG =======
+                    type flask_log.txt
+                    echo ==========================
+                    exit /b 1
+                )
 
                 rem --- Health check ---
                 echo Checking Flask health...
@@ -55,7 +67,7 @@ pipeline {
                 if errorlevel 1 (
                     echo ❌ Flask failed health check!
                     echo ======= FLASK LOG =======
-                    if exist flask_log.txt type flask_log.txt
+                    type flask_log.txt
                     echo ==========================
                     exit /b 1
                 ) else (
