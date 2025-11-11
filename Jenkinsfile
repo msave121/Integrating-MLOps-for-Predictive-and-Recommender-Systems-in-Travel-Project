@@ -43,8 +43,8 @@ pipeline {
 
                 echo Launching Flask on port %FLASK_PORT%...
 
-                REM Start Flask detached and capture its PID in flask.pid
-                powershell -NoProfile -Command "$env:VENV_ACTIVATOR = '.venv\\Scripts\\activate'; $cmd = 'cmd /c \"call ' + $env:VENV_ACTIVATOR + ' && python src\\app.py\"'; $p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $cmd -PassThru -WindowStyle Hidden -RedirectStandardOutput 'flask_log.txt' -RedirectStandardError 'flask_log.txt'; $p.Id | Out-File -FilePath 'flask.pid' -Encoding ascii"
+                REM Start the app with venv Python and save PID
+                powershell -NoProfile -Command "$p = Start-Process -FilePath '.venv\\Scripts\\python.exe' -ArgumentList 'src\\app.py','--host','127.0.0.1','--port','%FLASK_PORT%' -PassThru -WindowStyle Hidden -RedirectStandardOutput 'flask_log.txt' -RedirectStandardError 'flask_log.txt'; $p.Id | Out-File -FilePath 'flask.pid' -Encoding ascii"
 
                 echo Waiting for Flask to fully start (up to 60 seconds)...
                 powershell -NoProfile -Command "$deadline=(Get-Date).AddSeconds(60); while((Get-Date)-lt $deadline){ try{ $r=Invoke-WebRequest -UseBasicParsing '%FLASK_URL%' -TimeoutSec 2; if($r.StatusCode -eq 200){ Write-Host 'Flask is up!'; exit 0 } }catch{} Start-Sleep -Seconds 1 }; Write-Error 'Flask did not start in time'; exit 1"
