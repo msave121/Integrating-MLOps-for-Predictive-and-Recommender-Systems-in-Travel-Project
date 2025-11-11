@@ -8,7 +8,6 @@ pipeline {
         MODEL_PATH = 'model\\voyage_model\\1\\model.pkl'
         APP_PATH   = 'src\\app.py'
         FLASK_PORT = '5055'
-        FLASK_URL  = 'http://127.0.0.1:%FLASK_PORT%/health'
     }
 
     stages {
@@ -31,8 +30,9 @@ pipeline {
             steps {
                 echo 'Training model...'
                 bat '''
-                %ACTIVATE%
-                %PYTHON% src\\train_regression.py --users data\\users.csv --flights data\\flights.csv --hotels data\\hotels.csv
+                set PYTHONUNBUFFERED=1
+                set PYTHONIOENCODING=utf-8
+                %PYTHON% -u src\\train_regression.py --users data\\users.csv --flights data\\flights.csv --hotels data\\hotels.csv
                 '''
             }
         }
@@ -41,10 +41,11 @@ pipeline {
             steps {
                 echo 'Testing model...'
                 bat '''
-                %ACTIVATE%
                 if exist "%MODEL_PATH%" (
                     echo [INFO] Model found at %MODEL_PATH%
-                    %PYTHON% src\\test_model.py
+                    set PYTHONUNBUFFERED=1
+                    set PYTHONIOENCODING=utf-8
+                    %PYTHON% -u src\\test_model.py
                 ) else (
                     echo [ERROR] Model not found at %MODEL_PATH%
                     exit /b 1
@@ -67,8 +68,10 @@ pipeline {
                 REM Start the app with venv Python, capture PID and split logs
                 powershell -NoProfile -Command "$p = Start-Process -FilePath '%PYTHON%' -ArgumentList 'src\\app.py','--host','127.0.0.1','--port','%FLASK_PORT%' -PassThru -WindowStyle Hidden -RedirectStandardOutput 'flask_out.txt' -RedirectStandardError 'flask_err.txt'; $p.Id | Out-File -FilePath 'flask.pid' -Encoding ascii"
 
+                echo Probing URL: http://127.0.0.1:%FLASK_PORT%/health
                 echo Waiting for Flask to fully start (up to 60 seconds)...
-                powershell -NoProfile -Command "$deadline=(Get-Date).AddSeconds(60); while((Get-Date)-lt $deadline){ try{ $r=Invoke-WebRequest -UseBasicParsing '%FLASK_URL%' -TimeoutSec 2; if($r.StatusCode -eq 200){ Write-Host 'Flask is up!'; exit 0 } }catch{} Start-Sleep -Seconds 1 }; Write-Error 'Flask did not start in time'; exit 1"
+
+                powershell -NoProfile -Command "$deadline=(Get-Date).AddSeconds(60); while((Get-Date)-lt $deadline){ try{ $r=Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:%FLASK_PORT%/health' -TimeoutSec 2; if($r.StatusCode -eq 200){ Write-Host 'Flask is up!'; exit 0 } }catch{} Start-Sleep -Seconds 1 }; Write-Error 'Flask did not start in time'; exit 1"
                 '''
                 echo '✅ Flask app started successfully.'
             }
