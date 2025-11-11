@@ -1,64 +1,77 @@
 pipeline {
     agent any
 
+    environment {
+        PYTHON = ".venv\\Scripts\\python.exe"
+        FLASK_PORT = "5055"
+        AIRFLOW_USER = "admin"
+        AIRFLOW_PASS = "admin"
+    }
+
     stages {
-        stage('Setup Environment') {
+
+        stage('🧹 Clean Up') {
             steps {
-                echo '=== Setting up Python Environment ==='
                 bat '''
+                echo Cleaning workspace...
+                if exist flask_log.txt del /f /q flask_log.txt
+
+                echo Checking for any existing Flask processes on port %FLASK_PORT%...
+                for /f "tokens=5" %%p in ('netstat -aon ^| findstr :%FLASK_PORT% ^| findstr LISTENING') do (
+                    echo Killing old Flask process with PID %%p
+                    taskkill /F /PID %%p
+                )
+                exit /b 0
+                '''
+            }
+        }
+
+        stage('⚙️ Setup Python Env') {
+            steps {
+                bat '''
+                echo Setting up virtual environment...
                 if not exist .venv (
                     python -m venv .venv
                 )
                 call .venv\\Scripts\\activate
+                echo Installing dependencies...
                 pip install --upgrade pip
                 pip install -r requirements.txt
                 '''
             }
         }
 
-        stage('Train Model') {
+        stage('🚀 Start Flask App') {
             steps {
-                echo '=== Training Model ==='
                 bat '''
-                call .venv\\Scripts\\activate
-                python src\\train_regression.py --users data\\users.csv --flights data\\flights.csv --hotels data\\hotels.csv
+                echo Starting Flask app on port %FLASK_PORT%...
+                del flask_log.txt 2>nul
+                start "" cmd /c "call .venv\\Scripts\\activate && python src\\app.py > flask_log.txt 2>&1"
+
+                echo Waiting 15 seconds for Flask to start...
+                timeout /t 15 >nul
+
+                echo Checking health...
+                curl -s http://localhost:%FLASK_PORT% >nul
+                if errorlevel 1 (
+                    echo ❌ Flask failed to start!
+                    if exist flask_log.txt type flask_log.txt
+                    exit /b 1
+                ) else (
+                    echo ✅ Flask is running successfully on port %FLASK_PORT%!
+                )
                 '''
             }
         }
 
-        stage('Deploy Flask App') {
+        stage('🌬️ Trigger Airflow DAG') {
             steps {
-                echo '=== Starting Flask App ==='
                 bat '''
-                rem --- Kill any process using the port 5055 ---
-                "C:\\Windows\\System32\\netstat.exe" -aon | "C:\\Windows\\System32\\findstr.exe" :5055 > temp_netstat.txt 2>nul
-                for /F "tokens=5" %%p in (temp_netstat.txt) do taskkill /F /PID %%p >nul 2>&1
-                del temp_netstat.txt 2>nul
-
-                rem --- Start Flask app in background ---
-                del flask_log.txt 2>nul
-                echo Starting Flask app in background...
-                start "" cmd /c "call .venv\\Scripts\\activate && python src\\app.py > flask_log.txt 2>&1"
-
-                rem --- Wait for Flask to be ready (up to 60 seconds) ---
-                echo Waiting for Flask to report readiness...
-                set ready=
-
-                for /L %%i in (1 1 60) do (
-                    findstr /C:"Voyage Analytics API is running" flask_log.txt >nul 2>&1 && set ready=1 && goto ready
-                    ping 127.0.0.1 -n 2 >nul
-                )
-
-                :ready
-                if not defined ready (
-                    echo ❌ Flask failed to start within 60 seconds!
-                    echo ======= FLASK LOG =======
-                    type flask_log.txt
-                    echo ==========================
-                    exit /b 1
-                )
-
-                echo ✅ Flask app started successfully!
+                echo Triggering Airflow DAG...
+                curl -X POST http://localhost:8081/api/v1/dags/voyage_analytics_dag/dagRuns ^
+                     -H "Content-Type: application/json" ^
+                     -u %AIRFLOW_USER%:%AIRFLOW_PASS% ^
+                     -d "{\\"conf\\": {\\"run_type\\": \\"jenkins\\"}}"
                 '''
             }
         }
@@ -66,19 +79,21 @@ pipeline {
 
     post {
         always {
-            echo '🧹 Cleaning up Flask process...'
+            echo "🧹 Cleaning Flask process..."
             bat '''
-            "C:\\Windows\\System32\\netstat.exe" -aon | "C:\\Windows\\System32\\findstr.exe" :5055 > temp_netstat.txt 2>nul
-            for /F "tokens=5" %%p in (temp_netstat.txt) do taskkill /F /PID %%p >nul 2>&1
-            del temp_netstat.txt 2>nul
-            echo ✅ Cleanup complete.
+            for /f "tokens=5" %%p in ('netstat -aon ^| findstr :%FLASK_PORT% ^| findstr LISTENING') do (
+                taskkill /F /PID %%p
+            )
+            exit /b 0
             '''
-
-            echo '❌ Pipeline failed. Showing Flask logs below (if any):'
+        }
+        success {
+            echo "✅ Pipeline completed successfully!"
+        }
+        failure {
+            echo "❌ Pipeline failed. Showing Flask logs:"
             bat '''
-            echo ========= FLASK LOG (ON FAILURE) =========
             if exist flask_log.txt type flask_log.txt
-            echo ==========================================
             '''
         }
     }
