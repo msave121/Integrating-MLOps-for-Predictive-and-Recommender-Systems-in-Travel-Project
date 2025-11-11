@@ -4,54 +4,65 @@ pipeline {
     environment {
         PYTHON = ".venv\\Scripts\\python.exe"
         FLASK_PORT = "5055"
-        AIRFLOW_USER = "admin"
-        AIRFLOW_PASS = "admin"
     }
 
     stages {
 
-        stage('🧹 Clean Up') {
+        stage('🧹 Cleanup Workspace') {
             steps {
                 bat '''
-                echo Cleaning workspace...
+                echo === Cleaning workspace ===
                 if exist flask_log.txt del /f /q flask_log.txt
 
                 echo Checking for any existing Flask processes on port %FLASK_PORT%...
+                set "FOUND_PROCESS="
                 for /f "tokens=5" %%p in ('netstat -aon ^| findstr :%FLASK_PORT% ^| findstr LISTENING') do (
                     echo Killing old Flask process with PID %%p
                     taskkill /F /PID %%p
+                    set FOUND_PROCESS=1
                 )
+
+                if not defined FOUND_PROCESS (
+                    echo ✅ No existing Flask process found on port %FLASK_PORT%.
+                ) else (
+                    echo 🔁 Existing Flask process killed successfully.
+                )
+
+                rem Prevent pipeline from failing if nothing found
                 exit /b 0
                 '''
             }
         }
 
-        stage('⚙️ Setup Python Env') {
+        stage('📦 Setup Environment') {
             steps {
                 bat '''
-                echo Setting up virtual environment...
+                echo === Setting up Python environment ===
                 if not exist .venv (
+                    echo Creating virtual environment...
                     python -m venv .venv
                 )
                 call .venv\\Scripts\\activate
                 echo Installing dependencies...
-                pip install --upgrade pip
+                pip install --upgrade pip setuptools wheel
                 pip install -r requirements.txt
                 '''
             }
         }
 
-        stage('🚀 Start Flask App') {
+        stage('🚀 Deploy Flask App') {
             steps {
                 bat '''
-                echo Starting Flask app on port %FLASK_PORT%...
+                echo === Starting Flask App ===
                 del flask_log.txt 2>nul
+
+                echo Launching Flask on port %FLASK_PORT%...
                 start "" cmd /c "call .venv\\Scripts\\activate && python src\\app.py > flask_log.txt 2>&1"
 
                 echo Waiting 15 seconds for Flask to start...
-                timeout /t 15 >nul
+                ping 127.0.0.1 -n 15 >nul
 
-                echo Checking health...
+                echo Checking health of Flask app...
                 curl -s http://localhost:%FLASK_PORT% >nul
                 if errorlevel 1 (
                     echo ❌ Flask failed to start!
@@ -67,10 +78,10 @@ pipeline {
         stage('🌬️ Trigger Airflow DAG') {
             steps {
                 bat '''
-                echo Triggering Airflow DAG...
+                echo === Triggering Airflow DAG ===
                 curl -X POST http://localhost:8081/api/v1/dags/voyage_analytics_dag/dagRuns ^
                      -H "Content-Type: application/json" ^
-                     -u %AIRFLOW_USER%:%AIRFLOW_PASS% ^
+                     -u admin:admin ^
                      -d "{\\"conf\\": {\\"run_type\\": \\"jenkins\\"}}"
                 '''
             }
@@ -78,23 +89,16 @@ pipeline {
     }
 
     post {
-        always {
-            echo "🧹 Cleaning Flask process..."
+        failure {
+            echo "❌ Pipeline failed. Showing Flask logs (if any):"
             bat '''
-            for /f "tokens=5" %%p in ('netstat -aon ^| findstr :%FLASK_PORT% ^| findstr LISTENING') do (
-                taskkill /F /PID %%p
-            )
-            exit /b 0
+            echo ========= FLASK LOG (ON FAILURE) =========
+            if exist flask_log.txt type flask_log.txt
+            echo ==========================================
             '''
         }
         success {
             echo "✅ Pipeline completed successfully!"
-        }
-        failure {
-            echo "❌ Pipeline failed. Showing Flask logs:"
-            bat '''
-            if exist flask_log.txt type flask_log.txt
-            '''
         }
     }
 }
