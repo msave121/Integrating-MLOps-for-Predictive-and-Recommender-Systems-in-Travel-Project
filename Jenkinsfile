@@ -44,9 +44,10 @@ pipeline {
 
                 echo Waiting for Flask to fully start (up to 60 seconds)...
                 set "started="
+                REM Use double percent inside Jenkins batch for loops
                 for /l %%i in (1,1,12) do (
-                    timeout /t 5 >nul
                     echo Checking Flask (attempt %%i)...
+                    timeout /t 5 >nul
                     curl -s http://localhost:%FLASK_PORT% >nul 2>&1 && set started=1 && goto :started
                 )
 
