@@ -8,48 +8,77 @@ from sklearn.ensemble import RandomForestRegressor
 from features import prepare_X_y
 from preprocess import prepare_dataset
 
+import mlflow
+import mlflow.sklearn
+
+
 def run_train(users_csv, flights_csv, hotels_csv=None):
-    print("INFO:_main_:Merging datasets...")
-    df = prepare_dataset(users_csv, flights_csv, hotels_csv)
+    print("INFO: [MLflow] Starting model training...")
 
-    print("INFO:_main_:[INFO] Preparing features and target...")
-    X, y, preprocessor, num_cols, cat_cols = prepare_X_y(df, target="price")
+    # --- Connect to your MLflow tracking server ---
+    mlflow.set_tracking_uri("http://localhost:5000")
+    mlflow.set_experiment("Voyage Analytics Model")
 
-    print(f"INFO:_main_:[INFO] Using {len(num_cols)} numeric and {len(cat_cols)} categorical columns.")
-    print(f"INFO:_main_:Training pipeline on {X.shape[0]} rows, {X.shape[1]} features")
+    # --- Start MLflow run ---
+    with mlflow.start_run(run_name="RandomForest_Training"):
 
-    # --- Full pipeline with RandomForestRegressor ---
-    pipeline = Pipeline([
-        ("preprocessor", preprocessor),
-        ("regressor", RandomForestRegressor(
-            n_estimators=200,
-            max_depth=10,
-            random_state=42
-        ))
-    ])
+        print("INFO: Merging datasets...")
+        df = prepare_dataset(users_csv, flights_csv, hotels_csv)
 
-    pipeline.fit(X, y)
+        print("INFO: Preparing features and target...")
+        X, y, preprocessor, num_cols, cat_cols = prepare_X_y(df, target="price")
 
-    # --- Save columns.json
-    os.makedirs("src", exist_ok=True)
-    columns_info = {"num_cols": num_cols, "cat_cols": cat_cols, "target": "price"}
-    with open("src/columns.json", "w", encoding="utf-8") as f:
-        json.dump(columns_info, f, indent=2)
-    print("INFO:_main_:columns.json saved in src/")
+        print(f"INFO: Using {len(num_cols)} numeric and {len(cat_cols)} categorical columns.")
+        print(f"INFO: Training pipeline on {X.shape[0]} rows, {X.shape[1]} features")
 
-    # --- Save full pipeline
-    model_dir = "model/voyage_model/1"
-    os.makedirs(model_dir, exist_ok=True)
-    joblib.dump(pipeline, os.path.join(model_dir, "model.pkl"))
-    print(f"INFO:_main_:Model saved at {model_dir}/model.pkl")
+        # --- Model setup ---
+        params = {
+            "n_estimators": 200,
+            "max_depth": 10,
+            "random_state": 42
+        }
 
-    # --- Also save copy under mlruns for test_model.py ---
-    mlflow_dir = "mlruns/0/latest_model"
-    os.makedirs(mlflow_dir, exist_ok=True)
-    joblib.dump(pipeline, os.path.join(mlflow_dir, "model.pkl"))
-    print(f"INFO:_main_:Model also saved in {mlflow_dir}/model.pkl")
+        pipeline = Pipeline([
+            ("preprocessor", preprocessor),
+            ("regressor", RandomForestRegressor(**params))
+        ])
 
-    print("INFO:_main_:Training complete successfully.")
+        # --- Log model parameters ---
+        mlflow.log_params(params)
+
+        # --- Train model ---
+        pipeline.fit(X, y)
+
+        # --- Save columns.json ---
+        os.makedirs("src", exist_ok=True)
+        columns_info = {"num_cols": num_cols, "cat_cols": cat_cols, "target": "price"}
+        with open("src/columns.json", "w", encoding="utf-8") as f:
+            json.dump(columns_info, f, indent=2)
+        print("INFO: columns.json saved in src/")
+
+        # --- Save model locally ---
+        model_dir = "model/voyage_model/1"
+        os.makedirs(model_dir, exist_ok=True)
+        model_path = os.path.join(model_dir, "model.pkl")
+        joblib.dump(pipeline, model_path)
+        print(f"INFO: Model saved at {model_path}")
+
+        # --- Log model to MLflow ---
+        mlflow.sklearn.log_model(
+            sk_model=pipeline,
+            artifact_path="model",
+            registered_model_name="VoyagePricePredictor"
+        )
+
+        print("INFO: Model logged to MLflow successfully.")
+
+        # --- Example metric (just for demo) ---
+        r2 = pipeline.score(X, y)
+        mlflow.log_metric("r2_score", r2)
+        print(f"INFO: Logged metric r2_score = {r2:.4f}")
+
+    print("✅ Training complete and tracked with MLflow!")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
